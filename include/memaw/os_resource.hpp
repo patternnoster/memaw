@@ -1,9 +1,7 @@
 #pragma once
-#include <cstddef>
+#include "__detail/base.hpp"
 
 namespace memaw {
-
-using std::size_t;
 
 /**
  * @brief Memory resource that always allocates and frees memory via
