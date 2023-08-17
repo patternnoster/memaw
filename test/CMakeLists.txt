@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.23)
 
-add_executable(memaw_tests memaw_tests.cpp)
+add_executable(memaw_tests
+  concepts_tests.cpp
+)
 target_link_libraries(memaw_tests PRIVATE memaw gtest_main)
 
 # Show all warnings because we're pedantic (and also all and extra)
