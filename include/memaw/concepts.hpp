@@ -3,6 +3,14 @@
 
 #include "__detail/base.hpp"
 
+/**
+ * @file
+ * Concepts for working with memory, used throughout this library
+ *
+ * @author    patternnoster@github
+ * @copyright 2023, under the MIT License (see /LICENSE for details)
+ **/
+
 namespace memaw {
 
 /**

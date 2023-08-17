@@ -1,6 +1,14 @@
 #pragma once
 #include "__detail/base.hpp"
 
+/**
+ * @file
+ * The basic memory resource that makes direct system calls
+ *
+ * @author    patternnoster@github
+ * @copyright 2023, under the MIT License (see /LICENSE for details)
+ **/
+
 namespace memaw {
 
 /**
