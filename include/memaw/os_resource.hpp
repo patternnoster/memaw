@@ -1,5 +1,6 @@
 #pragma once
 #include "__detail/base.hpp"
+#include "__detail/os_info.hpp"
 
 /**
  * @file
@@ -18,6 +19,14 @@ namespace memaw {
 class os_resource {
 public:
   constexpr os_resource() noexcept = default;
+
+  /**
+   * @brief Get the size of a (regular) system memory page (usually
+   *        4KiB)
+   **/
+  static size_t get_page_size() noexcept {
+    return __detail::os_info.page_size;
+  }
 
   [[nodiscard]] static void* allocate
     (size_t size, size_t alignment = alignof(std::max_align_t)) noexcept;
