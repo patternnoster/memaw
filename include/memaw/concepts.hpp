@@ -57,4 +57,22 @@ concept bound_resource = resource<R> && requires() {
   { R::min_size() } noexcept -> std::convertible_to<size_t>;
 };
 
+/**
+ * @brief A specializable global constant that enables the
+ *        granular_resource concept (see below) for R. By default,
+ *        true iff R defines a constexpr member R::is_granular
+ *        implicitly convertible to true
+ **/
+template <bound_resource R>
+constexpr bool enable_granular_resource = requires {
+  { std::bool_constant<R::is_granular>{} } -> std::same_as<std::true_type>;
+};
+
+/**
+ * @brief The concepts of a bound resource that can only allocate
+ *        sizes that are multiples of its min_size()
+ **/
+template <typename R>
+concept granular_resource = bound_resource<R> && enable_granular_resource<R>;
+
 } // namespace memaw
