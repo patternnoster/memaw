@@ -28,6 +28,13 @@ public:
     return __detail::os_info.page_size;
   }
 
+  /**
+   * @brief Returns the known minimum size limit for allocations
+   **/
+  static size_t min_size() noexcept {
+    return get_page_size();
+  }
+
   [[nodiscard]] static void* allocate
     (size_t size, size_t alignment = alignof(std::max_align_t)) noexcept;
 

@@ -1,5 +1,6 @@
 #pragma once
 #include <concepts>
+#include <type_traits>
 
 #include "__detail/base.hpp"
 
@@ -41,6 +42,19 @@ concept resource = std::equality_comparable<R>
   { res.allocate(size, alignment) } -> std::same_as<void*>;
   res.deallocate(ptr, size);
   res.deallocate(ptr, size, alignment);
+};
+
+/**
+ * @brief The concept of a resource that has a (constant) minimum
+ *        allocation size limit. Such resources must define a static
+ *        (but not necessarily constexpr) noexcept method min_size()
+ *        that returns that minimum
+ * @note  Semantic requirement: the return value of R::min_size() must
+ *        never change (equality preservation) and be greater than 0
+ **/
+template <typename R>
+concept bound_resource = resource<R> && requires() {
+  { R::min_size() } noexcept -> std::convertible_to<size_t>;
 };
 
 } // namespace memaw
