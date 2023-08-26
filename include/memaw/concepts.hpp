@@ -3,6 +3,7 @@
 #include <type_traits>
 
 #include "__detail/base.hpp"
+#include "__detail/concepts_impl.hpp"
 
 /**
  * @file
@@ -96,5 +97,21 @@ constexpr bool enable_thread_safe_resource = requires {
  **/
 template <typename R>
 concept thread_safe_resource = resource<R> && enable_thread_safe_resource<R>;
+
+/**
+ * @brief The concept of a resource whose allocation, deallocation and
+ *        equality testing methods don't throw exceptions. Such
+ *        resources return nullptr whenever allocation fails. All
+ *        resources in this library model this concept
+ **/
+template <typename R>
+concept nothrow_resource = resource<R>
+  && __detail::nothrow_equality_comparable<R>
+  && requires(R res, void* ptr, size_t size, size_t alignment) {
+  { res.allocate(size) } noexcept;
+  { res.allocate(size, alignment) } noexcept;
+  { res.deallocate(ptr, size) } noexcept;
+  { res.deallocate(ptr, size, alignment) } noexcept;
+};
 
 } // namespace memaw
