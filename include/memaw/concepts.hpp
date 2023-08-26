@@ -75,4 +75,26 @@ constexpr bool enable_granular_resource = requires {
 template <typename R>
 concept granular_resource = bound_resource<R> && enable_granular_resource<R>;
 
+/**
+ * @brief A specializable global constant that enables the
+ *        thread_safe_resource concept (see below) for R. By default,
+ *        true iff R defines a constexpr member R::is_thread_safe
+ *        implicitly convertible to true
+ **/
+template <resource R>
+constexpr bool enable_thread_safe_resource = requires {
+  { std::bool_constant<R::is_thread_safe>{} } -> std::same_as<std::true_type>;
+};
+
+/**
+ * @brief The concept of a resource whose methods can safely be called
+ *        concurrently from different threads
+ *
+ * To mark resource as thread_safe one has to specialize the constant
+ * enable_thread_safe_resource to true. If then the above condition is
+ * not satisfied, the behaviour of the program is undefined.
+ **/
+template <typename R>
+concept thread_safe_resource = resource<R> && enable_thread_safe_resource<R>;
+
 } // namespace memaw
