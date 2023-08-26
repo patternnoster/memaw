@@ -77,6 +77,23 @@ template <typename R>
 concept granular_resource = bound_resource<R> && enable_granular_resource<R>;
 
 /**
+ * @brief The concept of a resource that has a (constant) guaranteed
+ *        alignment greater than alignof(std::max_align_t). Such
+ *        resources must define a static (but not necessarily
+ *        constexpr) method guaranteed_alignment() that returns that
+ *        value
+ * @note  Semantic requirements are obvious: the return value of
+ *        R::guaranteed_alignment() must be a power of 2 greater than
+ *        alignof(std::max_align_t) and must never change (equality
+ *        preservation). Any pointers returned from an allocate() call
+ *        to R must be aligned by (at least) that value
+ **/
+template <typename R>
+concept overaligning_resource = resource<R> && requires() {
+  { R::guaranteed_alignment() } noexcept -> std::same_as<size_t>;
+};
+
+/**
  * @brief A specializable global constant that enables the
  *        thread_safe_resource concept (see below) for R. By default,
  *        true iff R defines a constexpr member R::is_thread_safe
