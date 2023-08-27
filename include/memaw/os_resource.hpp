@@ -18,6 +18,9 @@ namespace memaw {
  **/
 class os_resource {
 public:
+  constexpr static bool is_granular = true;
+  constexpr static bool is_thread_safe = true;
+
   constexpr os_resource() noexcept = default;
 
   /**
@@ -32,6 +35,16 @@ public:
    * @brief Returns the known minimum size limit for allocations
    **/
   static size_t min_size() noexcept {
+    return get_page_size();
+  }
+
+  /**
+   * @brief Returns the known minimum alignment that any allocated
+   *        address will have (regardless of the alignment argument)
+   * @note  The result is always >= min_size(), but may be bigger on
+   *        some systems (e.g. with regular pages on Windows)
+   **/
+  static size_t guaranteed_alignment() noexcept {
     return get_page_size();
   }
 
