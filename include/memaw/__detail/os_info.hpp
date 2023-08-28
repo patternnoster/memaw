@@ -27,18 +27,21 @@ public:
   inline os_info_t() noexcept;
 
   size_t page_size;
+  size_t granularity;
 };
 
 inline static const os_info_t os_info{};
 
 os_info_t::os_info_t() noexcept {
-  // Load the regular page size
+  // Load the regular page size & granularity
 #if MEMAW_IS(OS, WINDOWS)
   SYSTEM_INFO info;
   GetSystemInfo(&info);  // This call never fails
+
   page_size = info.dwPageSize;
+  granularity = info.dwAllocationGranularity;
 #else
-  page_size = sysconf(_SC_PAGESIZE);
+  granularity = page_size = sysconf(_SC_PAGESIZE);
 #endif
 }
 

@@ -45,7 +45,7 @@ public:
    *        some systems (e.g. with regular pages on Windows)
    **/
   static size_t guaranteed_alignment() noexcept {
-    return get_page_size();
+    return __detail::os_info.granularity;
   }
 
   [[nodiscard]] static void* allocate
