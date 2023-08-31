@@ -90,7 +90,7 @@ concept granular_resource = bound_resource<R> && enable_granular_resource<R>;
  **/
 template <typename R>
 concept overaligning_resource = resource<R> && requires() {
-  { R::guaranteed_alignment() } noexcept -> std::same_as<size_t>;
+  { R::guaranteed_alignment() } noexcept -> std::same_as<pow2_t>;
 };
 
 /**

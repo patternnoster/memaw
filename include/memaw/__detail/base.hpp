@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <nupp/pow2_t.hpp>
 
 /**
  * @file
@@ -13,5 +14,6 @@
 namespace memaw {
 
 using std::size_t;
+using nupp::pow2_t;
 
 } // namespace memaw

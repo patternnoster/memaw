@@ -26,8 +26,8 @@ struct os_info_t {
 public:
   inline os_info_t() noexcept;
 
-  size_t page_size;
-  size_t granularity;
+  pow2_t page_size;
+  pow2_t granularity;
 };
 
 inline static const os_info_t os_info{};
@@ -38,10 +38,10 @@ os_info_t::os_info_t() noexcept {
   SYSTEM_INFO info;
   GetSystemInfo(&info);  // This call never fails
 
-  page_size = info.dwPageSize;
-  granularity = info.dwAllocationGranularity;
+  page_size = pow2_t{info.dwPageSize, pow2_t::exact};
+  granularity = pow2_t{info.dwAllocationGranularity, pow2_t::exact};
 #else
-  granularity = page_size = sysconf(_SC_PAGESIZE);
+  granularity = page_size = pow2_t{sysconf(_SC_PAGESIZE), pow2_t::exact};
 #endif
 }
 

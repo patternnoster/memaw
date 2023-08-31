@@ -27,14 +27,14 @@ public:
    * @brief Get the size of a (regular) system memory page (usually
    *        4KiB)
    **/
-  static size_t get_page_size() noexcept {
+  static pow2_t get_page_size() noexcept {
     return __detail::os_info.page_size;
   }
 
   /**
    * @brief Returns the known minimum size limit for allocations
    **/
-  static size_t min_size() noexcept {
+  static pow2_t min_size() noexcept {
     return get_page_size();
   }
 
@@ -44,7 +44,7 @@ public:
    * @note  The result is always >= min_size(), but may be bigger on
    *        some systems (e.g. with regular pages on Windows)
    **/
-  static size_t guaranteed_alignment() noexcept {
+  static pow2_t guaranteed_alignment() noexcept {
     return __detail::os_info.granularity;
   }
 
