@@ -27,6 +27,8 @@ public:
   inline os_info_t() noexcept;
 
   pow2_t page_size;
+  std::optional<pow2_t> big_page_size;
+
   pow2_t granularity;
 };
 

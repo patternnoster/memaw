@@ -1,4 +1,6 @@
 #pragma once
+#include <optional>
+
 #include "__detail/base.hpp"
 #include "__detail/os_info.hpp"
 
@@ -29,6 +31,24 @@ public:
    **/
   static pow2_t get_page_size() noexcept {
     return __detail::os_info.page_size;
+  }
+
+  /**
+   * @brief Get the size of a (default) big page if it is known and
+   *        available on the system
+   *
+   * On Linux, returns the default big (huge) page size (as given in
+   * /proc/meminfo), if any. On Windows returns the minimum big
+   * (large) page size available (usually 2MiB). On other systems, may
+   * return an empty optional even if big pages are supported.
+   *
+   * @note  This method returning a value does not itself guarantee a
+   *        successful big page allocation (e.g., Windows requires
+   *        additional permissions, on Linux preallocated huge pages
+   *        must be available etc.)
+   **/
+  static std::optional<pow2_t> get_big_page_size() noexcept {
+    return __detail::os_info.big_page_size;
   }
 
   /**
