@@ -1,4 +1,7 @@
 #pragma once
+#include <cstdint>
+#include <optional>
+
 #include "base.hpp"
 #include "environment.hpp"
 
@@ -6,6 +9,10 @@
 #  include <windows.h>
 #else
 #  include <unistd.h>
+#  if MEMAW_IS(OS, LINUX)
+#    include <cstdio>
+#    include <dirent.h>
+#  endif
 #endif
 
 /**
@@ -30,11 +37,47 @@ public:
   std::optional<pow2_t> big_page_size;
 
   pow2_t granularity;
+
+private:
+  static inline std::optional<pow2_t> get_big_page_size() noexcept;
 };
 
 inline static const os_info_t os_info{};
 
-os_info_t::os_info_t() noexcept {
+std::optional<pow2_t> os_info_t::get_big_page_size() noexcept {
+  uint64_t result = 0;
+
+#if MEMAW_IS(OS, LINUX)
+  /* On Linux we must parse /proc/meminfo (I wish there was a better
+   * way...) And yes, we will assume procfs is mounted at /proc as it
+   * is supposed to. The worst thing that could happen otherwise, we
+   * will return an empty optional. Not great, not terrible */
+  constexpr char MemInfoPath[] = "/proc/meminfo";
+
+  char buf[255];
+  if (const auto meminfo_fd = std::fopen(MemInfoPath, "r")) {
+    while (std::fgets(buf, sizeof(buf), meminfo_fd)) {
+      long unsigned value;
+      /* This line is hardcoded into the kernel and is so unlikely to
+       * change that we won't even bother asking "what if the size is
+       * not in kB" */
+      if (std::sscanf(buf, "Hugepagesize: %lu kB", &value) == 1) {
+        result = uint64_t(value) << 10;  // in bytes
+        break;
+      }
+    }
+    std::fclose(meminfo_fd);
+  }
+#elif MEMAW_IS(OS, WINDOWS)
+  // On Windows we can just request it through API though
+  result = GetLargePageMinimum();
+#endif
+
+  if (!nupp::is_pow2(result)) return {}; // Empty optional
+  return pow2_t{result, pow2_t::exact};
+}
+
+os_info_t::os_info_t() noexcept: big_page_size(get_big_page_size()) {
   // Load the regular page size & granularity
 #if MEMAW_IS(OS, WINDOWS)
   SYSTEM_INFO info;
