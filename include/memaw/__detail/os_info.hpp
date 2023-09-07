@@ -38,6 +38,8 @@ public:
 
   pow2_t granularity;
 
+  uint64_t page_sizes_mask;
+
 private:
   static inline std::optional<pow2_t> get_big_page_size() noexcept;
 };

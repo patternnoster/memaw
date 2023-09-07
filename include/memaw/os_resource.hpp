@@ -1,5 +1,7 @@
 #pragma once
+#include <nupp/mask_iterator.hpp>
 #include <optional>
+#include <ranges>
 
 #include "__detail/base.hpp"
 #include "__detail/os_info.hpp"
@@ -49,6 +51,27 @@ public:
    **/
   static std::optional<pow2_t> get_big_page_size() noexcept {
     return __detail::os_info.big_page_size;
+  }
+
+  /**
+   * @brief Returns all the available page sizes on the system, that
+   *        are known and supported in a pow2_t-valued range
+   *
+   * Always contains the regular page size (as returned from
+   * get_page_size()), and the result of get_big_page_size(), if
+   * any. On Linux additionally returns all the supported huge page
+   * sizes (as listed in /sys/kernel/mm/hugepages/). On other systems,
+   * no additional entries are guaranteed, even if supported (but may
+   * still appear, like in case of Windows on x86_64 with the pdpe1gb
+   * CPU flag)
+   *
+   * @note  This method enlisting a value does not guarantee a
+   *        successful big page allocation of that size
+   **/
+  static ranges::range auto get_available_page_sizes() noexcept {
+    return
+      ranges::subrange{nupp::mask_iterator(__detail::os_info.page_sizes_mask),
+                       std::default_sentinel};
   }
 
   /**

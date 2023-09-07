@@ -11,9 +11,13 @@
  * @copyright 2023, under the MIT License (see /LICENSE for details)
  **/
 
+namespace std::ranges {}
+
 namespace memaw {
 
 using std::size_t;
 using nupp::pow2_t;
+
+namespace ranges = std::ranges;
 
 } // namespace memaw
