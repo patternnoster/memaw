@@ -80,7 +80,7 @@ std::optional<pow2_t> os_info_t::get_big_page_size() noexcept {
 }
 
 os_info_t::os_info_t() noexcept: big_page_size(get_big_page_size()) {
-  // Load the regular page size & granularity
+  // First load the regular page size & granularity
 #if MEMAW_IS(OS, WINDOWS)
   SYSTEM_INFO info;
   GetSystemInfo(&info);  // This call never fails
@@ -89,6 +89,30 @@ os_info_t::os_info_t() noexcept: big_page_size(get_big_page_size()) {
   granularity = pow2_t{info.dwAllocationGranularity, pow2_t::exact};
 #else
   granularity = page_size = pow2_t{sysconf(_SC_PAGESIZE), pow2_t::exact};
+#endif
+
+  // Now, we need to get the mask of all pages somehow
+  page_sizes_mask = page_size;
+  if (big_page_size) page_sizes_mask|= *big_page_size;
+
+#if MEMAW_IS(OS, LINUX)
+  /* On Linux we will honestly enlist the directories in sysfs (and
+   * yes, we will once again assume it is properly mounted at /sys),
+   * as there is no other way to get our list */
+  constexpr char HugePagesPath[] = "/sys/kernel/mm/hugepages/";
+
+  if (const auto hp_dir = opendir(HugePagesPath)) {
+    while (const auto entry = readdir(hp_dir)) {
+      long unsigned value;
+      // The dirname is always like that (including kB) and is
+      // unlikely to ever change, we assume
+      if (std::sscanf(entry->d_name, "hugepages-%lukB", &value) == 1
+          && nupp::is_pow2(value))
+        page_sizes_mask|= value << 10;  // convert to bytes too
+    }
+    closedir(hp_dir);
+  }
+#elif MEMAW_IS(OS, WINDOWS)
 #endif
 }
 
