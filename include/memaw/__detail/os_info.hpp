@@ -7,6 +7,9 @@
 
 #if MEMAW_IS(OS, WINDOWS)
 #  include <windows.h>
+#  if MEMAW_IS(ARCH, X86_64)
+#    include <intrin.h>  // for __cpuid
+#  endif
 #else
 #  include <unistd.h>
 #  if MEMAW_IS(OS, LINUX)
@@ -37,6 +40,10 @@ public:
   std::optional<pow2_t> big_page_size;
 
   pow2_t granularity;
+
+#if MEMAW_IS(OS, WINDOWS)
+  decltype(&VirtualAlloc2) extended_alloc;
+#endif
 
   uint64_t page_sizes_mask;
 
@@ -113,6 +120,32 @@ os_info_t::os_info_t() noexcept: big_page_size(get_big_page_size()) {
     closedir(hp_dir);
   }
 #elif MEMAW_IS(OS, WINDOWS)
+  // On Windows, first check if the VirtualAlloc2 function is
+  // available in runtime
+  extended_alloc =
+    (decltype(&::VirtualAlloc2))GetProcAddress(LoadLibrary("kernelbase.dll"),
+                                               "VirtualAlloc2");
+
+  /* Now, Windows normally decides for itself what big (large) pages
+   * to use. But the extended alloc has this feature of asking for
+   * HUGE (and not large) pages directly. We only know it to work on
+   * x86_64 with the pdpe1gb CPU flag so far. So this is exactly what
+   * we're going to check and when we're going to check it */
+#  if MEMAW_IS(ARCH, X86_64)
+  constexpr uint64_t mask_1gb = uint64_t(1) << 30;
+  if (extended_alloc && big_page_size && *big_page_size < mask_1gb) {
+    constexpr int ExtendedFlag = 0x80000001;
+    int cpu_data[4];  // EAX->EDX
+
+    // First we check if the extended flag is available
+    __cpuid(cpu_data, 0x80000000);
+    if (cpu_data[0] >= ExtendedFlag) {
+      // Now check for the pdpe1gb flag (bit 26 of EDX)
+      __cpuid(cpu_data, ExtendedFlag);
+      if (cpu_data[3] & (1 << 26)) page_sizes_mask|= mask_1gb;
+    }
+  }
+#  endif
 #endif
 }
 

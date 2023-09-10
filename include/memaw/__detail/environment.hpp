@@ -27,6 +27,16 @@
 #  define __MEMAW__OS __MEMAW__OS_OTHER
 #endif
 
+// Detect the architecture
+#define __MEMAW__ARCH_X86_64  1
+#define __MEMAW__ARCH_OTHER  -1  // don't need any other here :-)
+
+#if defined(__x86_64) || defined(__x86_64__) || defined(_M_X64)
+#  define __MEMAW__ARCH __MEMAW__ARCH_X86_64
+#else
+#  define __MEMAW__ARCH __MEMAW__ARCH_OTHER
+#endif
+
 // Environment macro function
 #define MEMAW_IS(NAME, VALUE) \
   (__MEMAW__##NAME && __MEMAW__##NAME == __MEMAW__##NAME##_##VALUE)
