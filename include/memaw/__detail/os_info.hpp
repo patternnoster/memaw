@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <optional>
 
+#include "../literals.hpp"
+
 #include "base.hpp"
 #include "environment.hpp"
 
@@ -132,7 +134,7 @@ os_info_t::os_info_t() noexcept: big_page_size(get_big_page_size()) {
    * x86_64 with the pdpe1gb CPU flag so far. So this is exactly what
    * we're going to check and when we're going to check it */
 #  if MEMAW_IS(ARCH, X86_64)
-  constexpr uint64_t mask_1gb = uint64_t(1) << 30;
+  constexpr uint64_t mask_1gb = 1_GiB;
   if (extended_alloc && big_page_size && *big_page_size < mask_1gb) {
     constexpr int ExtendedFlag = 0x80000001;
     int cpu_data[4];  // EAX->EDX
