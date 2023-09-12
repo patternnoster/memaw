@@ -18,4 +18,7 @@ concept nothrow_equality_comparable = std::equality_comparable<T>
   {t != t} noexcept;
 };
 
+template <typename T, typename... Ts>
+concept same_as_either = (... || std::same_as<T, Ts>);
+
 } // namespace memaw::__detail

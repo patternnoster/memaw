@@ -4,7 +4,9 @@
 #include <ranges>
 
 #include "__detail/base.hpp"
+#include "__detail/concepts_impl.hpp"
 #include "__detail/os_info.hpp"
+#include "__detail/os_mapper.hpp"
 
 /**
  * @file
@@ -15,6 +17,27 @@
  **/
 
 namespace memaw {
+
+/**
+ * @brief Tags for the types of system memory pages available for
+ *        allocation
+ **/
+struct page_types {
+  using regular_t = __detail::os_mapper::regular_pages_tag;
+  using big_t = __detail::os_mapper::big_pages_tag;
+
+  constexpr static regular_t regular{};
+  constexpr static big_t big{};
+};
+
+/**
+ * @brief The concept of a type that denotes the size of a system
+ *        memory page and must be either one of the tags in page_types
+ *        or pow2_t for explicit size specification.
+ **/
+template <typename T>
+concept page_type =
+  __detail::same_as_either<T, page_types::regular_t, page_types::big_t, pow2_t>;
 
 /**
  * @brief Memory resource that always allocates and frees memory via
