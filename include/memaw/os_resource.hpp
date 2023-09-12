@@ -98,10 +98,16 @@ public:
   }
 
   /**
-   * @brief Returns the known minimum size limit for allocations
+   * @brief  Returns the known minimum size limit for allocations with
+   *         the specified page type
+   * @return * for page_types::regular, get_page_size();
+   *         * for page_types::big, *get_big_page_size() if it's
+   *           defined, or of get_page_size() if it's not;
+   *         * for explicitly specified page size, its value.
    **/
-  static pow2_t min_size() noexcept {
-    return get_page_size();
+  template <page_type P = page_types::regular_t>
+  static pow2_t min_size(const P page_type = {}) noexcept {
+    return __detail::os_mapper::get_min_size(page_type);
   }
 
   /**

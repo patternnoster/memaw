@@ -1,5 +1,8 @@
 #pragma once
+#include <concepts>
+
 #include "base.hpp"
+#include "os_info.hpp"
 
 /**
  * @file
@@ -15,6 +18,16 @@ class os_mapper {
 public:
   struct regular_pages_tag {};
   struct big_pages_tag {};
+
+  template <typename PageType>
+  static pow2_t get_min_size(const PageType page_type) noexcept {
+    if constexpr (std::same_as<PageType, regular_pages_tag>)
+      return os_info.page_size;
+    else if constexpr (std::same_as<PageType, pow2_t>)
+      return page_type;
+    else
+      return os_info.big_page_size.value_or(os_info.page_size);
+  }
 
   template <typename PageType>
   [[nodiscard]] inline static void* map(size_t size, pow2_t alignment,
