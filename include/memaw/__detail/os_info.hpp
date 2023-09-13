@@ -41,9 +41,8 @@ public:
   pow2_t page_size;
   std::optional<pow2_t> big_page_size;
 
-  pow2_t granularity;
-
 #if MEMAW_IS(OS, WINDOWS)
+  pow2_t granularity;
   decltype(&VirtualAlloc2) extended_alloc;
 #endif
 
@@ -89,15 +88,17 @@ std::optional<pow2_t> os_info_t::get_big_page_size() noexcept {
 }
 
 os_info_t::os_info_t() noexcept: big_page_size(get_big_page_size()) {
-  // First load the regular page size & granularity
+  // First load the regular page size
 #if MEMAW_IS(OS, WINDOWS)
   SYSTEM_INFO info;
   GetSystemInfo(&info);  // This call never fails
 
   page_size = pow2_t{info.dwPageSize, pow2_t::exact};
+
+  // Also remember the allocation granularity while we're at it
   granularity = pow2_t{info.dwAllocationGranularity, pow2_t::exact};
 #else
-  granularity = page_size = pow2_t{sysconf(_SC_PAGESIZE), pow2_t::exact};
+  page_size = pow2_t{sysconf(_SC_PAGESIZE), pow2_t::exact};
 #endif
 
   // Now, we need to get the mask of all pages somehow

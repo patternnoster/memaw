@@ -112,12 +112,15 @@ public:
 
   /**
    * @brief Returns the known minimum alignment that any allocated
-   *        address will have (regardless of the alignment argument)
-   * @note  The result is always >= min_size(), but may be bigger on
-   *        some systems (e.g. with regular pages on Windows)
+   *        with the specified page type address will have (regardless
+   *        of the alignment argument)
+   * @note  The result is always >= min_size(page_type), but may be
+   *        bigger on some systems (e.g. with regular pages on
+   *        Windows)
    **/
-  static pow2_t guaranteed_alignment() noexcept {
-    return __detail::os_info.granularity;
+  template <page_type P = page_types::regular_t>
+  static pow2_t guaranteed_alignment(const P page_type = {}) noexcept {
+    return __detail::os_mapper::get_guaranteed_alignment(page_type);
   }
 
   [[nodiscard]] static void* allocate

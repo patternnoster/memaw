@@ -1,7 +1,9 @@
 #pragma once
 #include <concepts>
+#include <nupp/algorithm.hpp>
 
 #include "base.hpp"
+#include "environment.hpp"
 #include "os_info.hpp"
 
 /**
@@ -27,6 +29,18 @@ public:
       return page_type;
     else
       return os_info.big_page_size.value_or(os_info.page_size);
+  }
+
+  template <typename PageType>
+  static pow2_t get_guaranteed_alignment(const PageType page_type) noexcept {
+#if MEMAW_IS(OS, WINDOWS)
+    if constexpr (std::same_as<PageType, regular_pages_tag>)
+      return os_info.granularity;
+    else
+      return nupp::maximum(get_min_size(page_type), os_info.granularity);
+#else
+    return get_min_size(page_type);
+#endif
   }
 
   template <typename PageType>
