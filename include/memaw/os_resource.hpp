@@ -123,8 +123,69 @@ public:
     return __detail::os_mapper::get_guaranteed_alignment(page_type);
   }
 
+  /**
+   * @brief Allocates (full pages of) memory of the given size and
+   *        alignment directly from the OS, using pages of the
+   *        specified type.
+   *
+   * The page type can be either:
+   * - page_types::regular to request regular memory pages of size
+   *   get_page_size();
+   * - page_types::big to request the default big memory pages. On
+   *   Linux the big (huge) pages of the default size (as possibly
+   *   returned from get_big_page_size()) will be requested. Windows
+   *   may (or may not) decide for itself what big (large) page sizes
+   *   to use (and may even use several at a time) depending on the
+   *   size and alignment values. For other systems, no promises of
+   *   the real page type(s) are made;
+   * - pow2_t with the exact page size value. On Linux (with procfs
+   *   mounted at /proc) and Windows 10+ (or Server 2016+) must be one
+   *   of the values returned from get_available_page_sizes(). On
+   *   other systems may be unsupported (and force the allocation to
+   *   fail).
+   *
+   * On Windows, an attempt to acquire the SeLockMemoryPrivilege for
+   * the process will be made if this function is called with a
+   * non-regular page type. If that fails (e.g., if the user running
+   * the process doesn't have that privilege), all big (large) pages
+   * allocations will fail as well.
+   *
+   * The alignment of the resulting address is at least as big as
+   * guaranteed_alignment(page_type). If the requested alignment is
+   * greater than that value, then note that:
+   * - on Linux the allocation result is always aligned by the page
+   *   size used (i.e., get_page_size() for page_types::regular,
+   *   *get_big_page_size() for page_types::big and the value of
+   *   page_type otherwise), and the allocation with bigger alignment
+   *   will fail since we choose to not implicitly allocate additional
+   *   memory in that case;
+   * - on latest versions of Windows (10+, Server 2016+), any
+   *   alignment can be requested independent of the page_type (but
+   *   the allocation may still fail if no matching address is
+   *   available). On earlier versions, only granularity (as returned
+   *   by guaranteed_alignment(page_type)) alignment is supported
+   *   (otherwise, the allocation will fail);
+   * - on other systems, alignments bigger than the page size may or
+   *   may not be supported (but note that if this implementation
+   *   doesn't know how to guarantee the requested alignment on the
+   *   current system, it will return nullptr without making a system
+   *   call).
+   *
+   * @param size must be a multiple of min_size(page_type), otherwise
+   *        the allocation will fail
+   * @param alignment must be a power of 2. On some systems (see
+   *        above) the allocation will fail if this value is greater
+   *        than guaranteed_alignment(page_type)
+   * @param page_type can be page_types::regular, page_types::big or
+   *        pow2_t with the exact page size value (see above for the
+   *        detailed description and limitations)
+   **/
+  template <page_type P = page_types::regular_t>
   [[nodiscard]] static void* allocate
-    (size_t size, size_t alignment = alignof(std::max_align_t)) noexcept;
+    (const size_t size, const size_t alignment = alignof(std::max_align_t),
+     const P page_type = {}) noexcept {
+    return __detail::os_mapper::map(size, pow2_t{alignment}, page_type);
+  }
 
   static void deallocate(void* ptr, size_t size,
                          size_t alignment = alignof(std::max_align_t)) noexcept;
