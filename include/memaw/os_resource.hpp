@@ -187,8 +187,26 @@ public:
     return __detail::os_mapper::map(size, pow2_t{alignment}, page_type);
   }
 
-  static void deallocate(void* ptr, size_t size,
-                         size_t alignment = alignof(std::max_align_t)) noexcept;
+  /**
+   * @brief   Deallocates the previously allocated region or several
+   *          adjacent regions of memory
+   * @param   ptr must be the pointer to the beginning of the (first)
+   *          region, returned from a previous call to allocate()
+   * @param   size must be the value of the size argument passed to
+   *          the allocate() call that resulted in allocation of the
+   *          region (in case of a single region deallocation) or the
+   *          exact sum of all those arguments (in case of several
+   *          adjacent regions deallocation)
+   * @param   alignment parameter is always ignored and present only
+   *          for interface compatibility reasons
+   * @warning All memory in range [ptr, ptr + size) must be accessible
+   *          (i.e., not previously deallocated), otherwise the
+   *          behaviour is undefined
+   **/
+  static void deallocate(void* const ptr, const size_t size,
+                         const size_t /*alignment, ignored */= 1) noexcept {
+    __detail::os_mapper::unmap(ptr, size);
+  }
 
   constexpr bool operator==(const os_resource&) const noexcept = default;
 };

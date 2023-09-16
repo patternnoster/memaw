@@ -45,9 +45,12 @@ public:
 
   template <typename PageType>
   [[nodiscard]] inline static void* map(size_t size, pow2_t alignment,
-                                        PageType) noexcept;
+                                        PageType) noexcept {
+    return nullptr;
+  }
 
-  inline static void unmap(void*, size_t size, pow2_t alignment) noexcept;
+  inline static void unmap(void*, size_t size) noexcept {
+  }
 };
 
 } // namespace memaw::__detail
