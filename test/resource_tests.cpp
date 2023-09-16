@@ -17,12 +17,42 @@ MATCHER_P(IsAlignedBy, log2, "") {
 class OsResourceTests: public ::testing::Test {
 protected:
   template <typename T>
-  void test_allocations(const T page_type) noexcept {
+  void test_allocs(const T page_type) noexcept {
     constexpr size_t BaseAttempts = 10;
     for (size_t i = 0; i < BaseAttempts; ++i) {
       const auto size = get_random_size(page_type);
       void* const result =
         res.allocate(size, res.guaranteed_alignment(page_type), page_type);
+      alloc_test(page_type, result, size);
+    }
+  }
+
+  template <typename T>
+  void test_aligned_allocs(const T page_type) noexcept {
+    for (size_t a = 1; a <= res.guaranteed_alignment(page_type); a<<= 1) {
+      const auto size = get_random_size(page_type);
+      auto result = res.allocate(size, a, page_type);
+      alloc_test(page_type, result, size);
+
+      // Test alternative interface too
+      if constexpr (std::same_as<T, page_types::regular_t>) {
+        result = res.allocate(size, a);
+        alloc_test(page_type, result, size);
+      }
+    }
+  }
+
+  template <typename T>
+  void test_overaligned_allocs(const T page_type, const int limit) noexcept {
+    const auto base_align = res.guaranteed_alignment(page_type);
+    for (int i = 1; i <= limit; ++i) {
+      const auto size = get_random_size(page_type);
+      const auto result = res.allocate(size, base_align << i, page_type);
+
+      if (result) {
+        EXPECT_THAT(result, IsAlignedBy(base_align.log2() + i));
+      }
+
       alloc_test(page_type, result, size);
     }
   }
@@ -100,3 +130,17 @@ TEST_F(OsResourceTests, static_info) {
   EXPECT_TRUE(has_ps);
   EXPECT_TRUE(!big_page_size_opt || has_bps);
 };
+
+TEST_F(OsResourceTests, regular_pages) {
+  constexpr auto tag = page_types::regular;
+
+  this->test_allocs(tag);
+  this->test_aligned_allocs(tag);
+
+  for (auto p : this->allocs)
+    EXPECT_NE(p.first, nullptr);  // Assume regular page allocation
+                                  // succeeds...
+
+  this->test_overaligned_allocs(tag, 10);
+  this->deallocate_all();
+}
