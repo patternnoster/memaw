@@ -1,12 +1,64 @@
+#include <cstdint>
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <nupp/pow2_t.hpp>
+#include <utility>
+#include <vector>
 
 #include "memaw/literals.hpp"
 #include "memaw/os_resource.hpp"
 
 using namespace memaw;
 
-TEST(OsResourceTests, static_info) {
+MATCHER_P(IsAlignedBy, log2, "") {
+  return (uintptr_t(arg) & ((uintptr_t(1) << log2) - 1)) == 0;
+}
+
+class OsResourceTests: public ::testing::Test {
+protected:
+  template <typename T>
+  void test_allocations(const T page_type) noexcept {
+    constexpr size_t BaseAttempts = 10;
+    for (size_t i = 0; i < BaseAttempts; ++i) {
+      const auto size = get_random_size(page_type);
+      void* const result =
+        res.allocate(size, res.guaranteed_alignment(page_type), page_type);
+      alloc_test(page_type, result, size);
+    }
+  }
+
+  void deallocate_all() noexcept {
+    for (auto p : allocs) res.deallocate(p.first, p.second);
+  }
+
+  os_resource res;
+  std::vector<std::pair<void*, size_t>> allocs;
+
+private:
+  template <typename T>
+  size_t get_random_size(const T page_type) const noexcept {
+    return res.min_size(page_type).value * (1 + (rand() % 10));
+  }
+
+  void memory_test(void* const ptr, size_t size) const noexcept {
+    auto c_ptr = static_cast<char*>(ptr);
+    while (size-- > 0) *c_ptr++ = 'x';
+  }
+
+  template <typename T>
+  void alloc_test(const T page_type,
+                  void* const ptr, const size_t size) noexcept {
+    ASSERT_NE(size, 0);  // Just in case...
+
+    allocs.emplace_back(ptr, size);
+    if (!ptr) return;  // Do not test nullptr
+
+    EXPECT_THAT(ptr, IsAlignedBy(res.guaranteed_alignment(page_type).log2()));
+    memory_test(ptr, size);
+  }
+};
+
+TEST_F(OsResourceTests, static_info) {
   const auto page_size = os_resource::get_page_size();
   EXPECT_TRUE(nupp::is_pow2(page_size.value));
 

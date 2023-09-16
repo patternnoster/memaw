@@ -4,7 +4,7 @@ add_executable(memaw_tests
   concepts_tests.cpp
   resource_tests.cpp
 )
-target_link_libraries(memaw_tests PRIVATE memaw gtest_main)
+target_link_libraries(memaw_tests PRIVATE memaw gmock gtest_main)
 
 # Show all warnings because we're pedantic (and also all and extra)
 target_compile_options(memaw_tests PRIVATE
