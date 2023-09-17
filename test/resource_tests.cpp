@@ -144,3 +144,42 @@ TEST_F(OsResourceTests, regular_pages) {
   this->test_overaligned_allocs(tag, 10);
   this->deallocate_all();
 }
+
+TEST_F(OsResourceTests, big_pages) {
+  constexpr auto tag = page_types::big;
+
+  this->test_allocs(tag);
+  this->test_aligned_allocs(tag);
+  this->test_overaligned_allocs(tag, 5);
+  this->deallocate_all();
+}
+
+TEST_F(OsResourceTests, explicitly_sized_pages) {
+  // We will try all the pages in the list and one that isn't there
+  const auto routine = [this](const pow2_t size) {
+    this->test_allocs(size);
+    this->test_aligned_allocs(size);
+
+    if (size == res.get_page_size()) {
+      for (auto p : this->allocs) {
+        EXPECT_NE(p.first, nullptr);
+      }
+    }
+
+    this->test_overaligned_allocs(size, 1);
+    this->deallocate_all();
+    this->allocs.clear();
+  };
+
+  uint64_t sizes_mask = 0;
+  for (auto size : res.get_available_page_sizes()) {
+    sizes_mask|= size;
+    routine(size);
+  }
+
+  for (size_t size = res.get_page_size() << 1; size; size<<= 1) {
+    if (sizes_mask & size) continue;
+    routine(pow2_t{size});
+    break;
+  }
+}
