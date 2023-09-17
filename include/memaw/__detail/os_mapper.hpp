@@ -6,6 +6,10 @@
 #include "environment.hpp"
 #include "os_info.hpp"
 
+#if MEMAW_IS(OS, WINDOWS)
+#  include <windows.h>
+#endif
+
 /**
  * @file
  * The OS allocation methods gathered into one (static) class
@@ -48,6 +52,18 @@ public:
 
   inline static void unmap(void*, size_t size) noexcept {
   }
+
+#if MEMAW_IS(OS, WINDOWS)
+private:
+  inline static bool try_acquire_lock_privilege() noexcept;
+
+  /* NB: in fact, we only need this for big pages. However, keeping it
+   * templated allows us to make an acquire call only if big pages
+   * allocation was requested (i.e., the corresponding template method
+   * was instantiated) */
+  template <typename>
+  inline static const bool has_lock_privilege = try_acquire_lock_privilege();
+#endif
 };
 
 template <typename PageType>
@@ -71,10 +87,43 @@ template <typename PageType>
 
   // Now, action!
 #if MEMAW_IS(OS, WINDOWS)
+  if constexpr (!RegularPages)
+    if (!os_info.big_page_size || !has_lock_privilege<big_pages_tag>)
+      return nullptr;
+
   return nullptr;
 #else
   return nullptr;
 #endif
 }
+
+#if MEMAW_IS(OS, WINDOWS)
+bool os_mapper::try_acquire_lock_privilege() noexcept {
+  /* We don't try to adjust account privileges here, hoping the user
+   * already took care of that. We only need to enable the privilege
+   * for the process token. Since Windows 10 that doesn't require
+   * admin rights anymore (assuming the corresponding account
+   * privilege has been granted) */
+  HANDLE token;
+  TOKEN_PRIVILEGES priv;
+
+  if (!LookupPrivilegeValue(nullptr, SE_LOCK_MEMORY_NAME,
+                            &priv.Privileges[0].Luid)
+      || !OpenProcessToken(GetCurrentProcess(),
+                           TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, &token))
+    return false;  // No need to worry about CloseHandle here
+
+  priv.PrivilegeCount = 1;
+  priv.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+  const bool adjusted =
+    AdjustTokenPrivileges(token, false, &priv, 0, nullptr, nullptr)
+    && GetLastError() == ERROR_SUCCESS;  // Error_success... Who doesn't love
+                                         // Windows and its little corks
+  CloseHandle(token);
+
+  return adjusted;
+}
+#endif
 
 } // namespace memaw::__detail
