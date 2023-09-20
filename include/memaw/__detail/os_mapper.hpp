@@ -91,7 +91,52 @@ template <typename PageType>
     if (!os_info.big_page_size || !has_lock_privilege<big_pages_tag>)
       return nullptr;
 
-  return nullptr;
+  /* We use the VirtualAlloc2 function and the extended parameters for
+   * two things: an explicitly specified page size or the alignment
+   * greater than guaranteed one (by page size) */
+  MEM_EXTENDED_PARAMETER extended_params[2] = {};
+  ULONG extended_params_count = 0;
+
+  // First case first
+  if constexpr (ExplicitPageSize) {
+    if (!(os_info.page_sizes_mask & page_type)) [[unlikely]]
+      return nullptr;  // Page size not supported
+
+    auto& param = extended_params[0];
+    param.Type = MemExtendedParameterAttributeFlags;
+    param.ULong64 = page_type == *os_info.big_page_size
+                    ? MEM_EXTENDED_PARAMETER_NONPAGED_LARGE
+                    : MEM_EXTENDED_PARAMETER_NONPAGED_HUGE;
+    ++extended_params_count;
+  }
+
+  // Now deal with the alignment requirement
+  MEM_ADDRESS_REQUIREMENTS addr_reqs;
+
+  // An innocent bit trick here: a pow2 is greater than the maximum of
+  // two pow2's iff it's greater than their disjunction
+  if (alignment > (min_size | os_info.granularity)) {
+    addr_reqs = { .LowestStartingAddress = nullptr,
+                  .HighestEndingAddress = nullptr,
+                  .Alignment = alignment };
+
+    auto& param = extended_params[extended_params_count++];
+    param.Type = MemExtendedParameterAddressRequirements;
+    param.Pointer = &addr_reqs;
+  }
+
+  // Also the basic param for both
+  constexpr auto Flags =
+    MEM_RESERVE | MEM_COMMIT | (RegularPages ? 0 : MEM_LARGE_PAGES);
+
+  if (!extended_params_count) // Okay, regular alloc
+    return VirtualAlloc(nullptr, size, Flags, PAGE_READWRITE);
+
+  if (!os_info.extended_alloc)
+    return nullptr;  // VirtualAlloc2 requested but not present
+
+  return os_info.extended_alloc(nullptr, nullptr, size, Flags, PAGE_READWRITE,
+                                extended_params, extended_params_count);
 #else
   return nullptr;
 #endif
