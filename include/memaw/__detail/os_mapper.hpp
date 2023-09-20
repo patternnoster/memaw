@@ -8,6 +8,12 @@
 
 #if MEMAW_IS(OS, WINDOWS)
 #  include <windows.h>
+#else
+#  include <sys/mman.h>
+#  include <unistd.h>
+#  if MEMAW_IS(OS, APPLE)
+#    include <mach/vm_statistics.h>
+#  endif
 #endif
 
 /**
@@ -138,7 +144,83 @@ template <typename PageType>
   return os_info.extended_alloc(nullptr, nullptr, size, Flags, PAGE_READWRITE,
                                 extended_params, extended_params_count);
 #else
-  return nullptr;
+  // Okay, this gonna be simpler for Unix-like systems, I guess...
+  constexpr auto BaseFlags = MAP_PRIVATE | MAP_ANON;
+  int extended_flags = 0;
+
+  if constexpr (RegularPages) {
+    // The only problem we might have with regular pages is the
+    // alignment requirement...
+    if (alignment > os_info.page_size) {
+      // ... and we only know how to guarantee this on BSD, hehe
+#  if MEMAW_IS(OS, BSD) && defined(MAP_ALIGNED)
+      extended_flags|= MAP_ALIGNED(alignment.log2());
+#  else
+      return nullptr;
+#  endif
+    }
+  }
+  else if constexpr (ExplicitPageSize) {
+    /* Not all systems support this. We'll deal with those that
+     * do. But even on them we cannot guarantee alignment bigger than
+     * the page size, so: */
+    if (alignment > page_type) return nullptr;
+
+#  if MEMAW_IS(OS, LINUX)
+    extended_flags|= MAP_HUGETLB | (page_type.log2() << MAP_HUGE_SHIFT);
+#  elif MEMAW_IS(OS, APPLE) && defined(VM_FLAGS_SUPERPAGE_SIZE_2MB)
+    if (page_type != pow2_t{1 << 21, pow2_t::exact}) return nullptr;
+    extended_flags|= VM_FLAGS_SUPERPAGE_SIZE_2MB;
+#  else
+    return nullptr; // Unsupported unfortunately
+#  endif
+  }
+  else {
+    /* Plain big pages flag is not always supported either. But we
+     * won't return nullptr if it isn't here just in case, unless the
+     * alignment requirement is too big */
+#  if MEMAW_IS(OS, LINUX)
+    if (os_info.big_page_size) {
+      // Cannot guarantee big alignment on Linux
+      if (alignment > *os_info.big_page_size) return nullptr;
+    }
+    else {
+      /* This is also possible, unfortunately, because we could've
+       * failed to read /proc/meminfo (e.g., if procfs was not mounted
+       * for some paranoid reason). The problem with this is that now
+       * we have no idea what alignment the page will be. All we can
+       * assume is that it is at least 2 times the regular page
+       * size. Since we're giving guarantees, we'll have to return
+       * nullptr otherwise, I'm afraid */
+      if (alignment > (os_info.page_size << 1)) return nullptr;
+    }
+
+    extended_flags|= MAP_HUGETLB;
+#  else
+    /* On other systems we have no idea what the page size will be (is
+     * it even gonna be big, is our flag anything more than simply a
+     * recommendation?). So we can't guarantee any alignment bigger
+     * than the standard page size */
+    if (alignment > os_info.page_size) return nullptr;
+
+#    if MEMAW_IS(OS, APPLE) && defined(VM_FLAGS_SUPERPAGE_SIZE_ANY)
+    extended_flags|= VM_FLAGS_SUPERPAGE_SIZE_ANY;
+#    elif MEMAW_IS(OS, BSD) && defined(MAP_ALIGNED_SUPER)
+    extended_flags|= MAP_ALIGNED_SUPER;
+#    endif
+#  endif
+  }
+
+  // That whole thing was only to get proper flags, can you imagine?
+  // Now do the call itself
+  void* const result =
+    mmap(nullptr, size, PROT_READ | PROT_WRITE,
+         BaseFlags | extended_flags, /*fd = */-1, /*offset = */0);
+
+  if (result == MAP_FAILED) return nullptr;
+  return result;
+
+  // Simpler my ass...
 #endif
 }
 
