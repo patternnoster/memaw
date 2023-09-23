@@ -46,6 +46,7 @@ concept page_type =
 class os_resource {
 public:
   constexpr static bool is_granular = true;
+  constexpr static bool is_sweeping = true;
   constexpr static bool is_thread_safe = true;
 
   constexpr os_resource() noexcept = default;

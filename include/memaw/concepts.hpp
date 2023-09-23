@@ -25,16 +25,32 @@ namespace memaw {
  * - if allocate(size) or allocate(size, alignment) returns a non-null
  *   pointer, the byte range [ptr, ptr + size) must be accessible and
  *   not intersect with any range returned from a previous call,
- *   unless deallocate() corresponding to that call has been made;
+ *   unless deallocate() corresponding (see below) to that call has
+ *   been made;
  * - if alignment is a power of 2, allocate(size, alignment) must
  *   return a pointer aligned (at least) by alignment (meaning, ptr &
  *   (alignment - 1) == 0), whereas allocate(size) must return a pointer
  *   aligned by (at least) alignof(std::max_align_t);
  *
- * If for every allocate() that returned non-null pointer, a
- * corresponding deallocate() call has been made to the same resource
- * instance, then all the memory used or returned by it must be
- * released by the time its destructor returns.
+ * A call r1.deallocate(ptr, size, [alignment]) corresponds to a call
+ * r2.allocate(size2, [alignment2])) if:
+ * - ptr was returned by that allocate() call;
+ * - r1 == r2;
+ * - size == size2;
+ * - alignment == alignment2, or not present in both calls.
+ *
+ * We say that a deallocate() call is valid if and only if it has an
+ * allocate() call it corresponds to and no deallocation that
+ * corresponds to the same call has happened. A valid deallocate()
+ * call must succeed. Note that some resources might have less
+ * restrictive conditions of when deallocate() and allocate()
+ * correspond (e.g., the alignment parameter of deallocate() ignored).
+ *
+ * For every r.allocate() that returned non-null pointer, a
+ * corresponding deallocate() call must be made before the destructor
+ * of r is called. All the memory allocated by r must be released by
+ * the time all destructors of instances that accepted those
+ * deallocate() calls return.
  **/
 template <typename R>
 concept resource = std::equality_comparable<R>
