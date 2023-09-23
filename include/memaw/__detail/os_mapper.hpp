@@ -56,8 +56,7 @@ public:
   template <typename PageType>
   [[nodiscard]] inline static void* map(size_t, pow2_t, PageType) noexcept;
 
-  inline static void unmap(void*, size_t size) noexcept {
-  }
+  inline static void unmap(void*, size_t) noexcept;
 
 #if MEMAW_IS(OS, WINDOWS)
 private:
@@ -221,6 +220,31 @@ template <typename PageType>
   return result;
 
   // Simpler my ass...
+#endif
+}
+
+void os_mapper::unmap(void* ptr, size_t size) noexcept {
+  if (!ptr) return;  // Who needs a system call like that...
+
+  // This function (as so many others, *sighs*) follows the patter "on
+  // Windows this, on everything else that"
+#if MEMAW_IS(OS, WINDOWS)
+  /* Windows does not allow adjacent regions to be unmapped
+   * simultaneously. Since we don't want to limit the user here, the
+   * best we can do is to query the region borders manually */
+  MEMORY_BASIC_INFORMATION info;
+  while (size) {
+    if (!VirtualQuery(ptr, &info, sizeof(info))
+        || info.AllocationBase != ptr || info.RegionSize > size) [[unlikely]]
+      break;  // User messed this up, of course!
+
+    VirtualFree(ptr, 0, MEM_RELEASE);
+
+    ptr = static_cast<std::byte*>(ptr) + info.RegionSize;
+    size-= info.RegionSize;
+  }
+#else
+  munmap(ptr, size);
 #endif
 }
 
