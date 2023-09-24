@@ -25,6 +25,20 @@ protected:
         res.allocate(size, res.guaranteed_alignment(page_type), page_type);
       alloc_test(page_type, result, size);
     }
+
+    // Alternative interfaces
+    {
+      const auto size = get_random_size(page_type);
+      if constexpr (std::same_as<T, page_types::regular_t>) {
+        const auto result = res.allocate(size);
+        alloc_test(page_type, result, size);
+      }
+
+      if constexpr (!std::same_as<T, pow2_t>) {
+        const auto result = res.allocate(size, page_type);
+        alloc_test(page_type, result, size);
+      }
+    }
   }
 
   template <typename T>

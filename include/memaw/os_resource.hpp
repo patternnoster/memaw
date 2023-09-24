@@ -189,6 +189,17 @@ public:
   }
 
   /**
+   * @brief An overload of the main allocation function that allows to
+   *        avoid specifying alignment. See the main allocate() for
+   *        detailed description
+   **/
+  template <__detail::same_as_either<page_types::regular_t,
+                                     page_types::big_t> P>
+  [[nodiscard]] static void* allocate(const size_t size, const P) noexcept {
+    return allocate<P>(size);
+  }
+
+  /**
    * @brief   Deallocates the previously allocated region or several
    *          adjacent regions of memory
    * @param   ptr must be the pointer to the beginning of the (first)
