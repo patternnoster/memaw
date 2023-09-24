@@ -37,6 +37,60 @@ The library is still work in progress. See below for the list of features implem
 | [**enable_thread_safe_resource**](#enable_thread_safe_resource) | a specializable global constant that enables the [**thread_safe_resource**](#thread_safe_resource) concept |
 
 ## Details
+### resource
+<sub>Defined in header [&lt;memaw/concepts.hpp&gt;](/include/memaw/concepts.hpp)</sub>
+```c++
+template <typename R>
+concept resource = std::equality_comparable<R>
+  && requires(R res, void* ptr, size_t size, size_t alignment) {
+  { res.allocate(size) } -> std::same_as<void*>;
+  { res.allocate(size, alignment) } -> std::same_as<void*>;
+  res.deallocate(ptr, size);
+  res.deallocate(ptr, size, alignment);
+};
+```
+The basic concept of a memory resource: can allocate and deallocate memory given size and alignment. All resources in the standard **&lt;memory_resource&gt;** and in this library model this concept.
+
+The semantic requirements are straightforward:
+* if `allocate(size)` or `allocate(size, alignment)` returns a non-null pointer, the byte range [ptr, ptr + size) must be accessible and not intersect with any range returned from a previous call, unless `deallocate()` corresponding (see below) to that call has been made;
+* if alignment is a power of 2, `allocate(size, alignment)` must return a pointer aligned (at least) by alignment (meaning, `ptr & (alignment - 1) == 0`), whereas `allocate(size)` must return a pointer aligned by (at least) `alignof(std::max_align_t)`.
+
+A call `r1.deallocate(ptr, size, [alignment])` corresponds to a call `r2.allocate(size2, [alignment2])`) if:
+1. ptr was returned by that `allocate()` call;
+2. `r1 == r2`;
+3. `size == size2`;
+4. `alignment == alignment2`, or not present in both calls.
+
+We say that a `deallocate()` call is valid if and only if it has an `allocate()` call it corresponds to and no deallocation that corresponds to the same call has happened. A valid `deallocate()` call must succeed. Note that some resources might have less restrictive conditions of when `deallocate()` and `allocate()` correspond (e.g., the alignment parameter of `deallocate()` ignored).
+For every `r.allocate()` that returned non-null pointer, a corresponding `deallocate()` call must be made before the destructor of r is called. All the memory allocated by r must be released by the time all destructors of instances that accepted those `deallocate()` calls return.
+
+---
+
+### bound_resource
+<sub>Defined in header [&lt;memaw/concepts.hpp&gt;](/include/memaw/concepts.hpp)</sub>
+```c++
+template <typename R>
+concept bound_resource = resource<R> && requires() {
+  { R::min_size() } noexcept -> std::convertible_to<size_t>;
+};
+```
+The concept of a resource that has a (constant) minimum allocation size limit. Such resources must define a static (but not necessarily constexpr) noexcept method `min_size()` that returns that minimum.
+
+> [!NOTE]
+> Semantic requirement: the return value of `R::min_size()` must never change (equality preservation) and be greater than 0.
+
+---
+
+### granular_resource
+<sub>Defined in header [&lt;memaw/concepts.hpp&gt;](/include/memaw/concepts.hpp)</sub>
+```c++
+template <typename R>
+concept granular_resource = bound_resource<R> && enable_granular_resource<R>;
+```
+The concepts of a bound resource that can only allocate sizes that are multiples of its `min_size()`.
+
+---
+
 ### os_resource
 <sub>Defined in header [&lt;memaw/os_resource.hpp&gt;](/include/memaw/os_resource.hpp)</sub>
 ```c++
