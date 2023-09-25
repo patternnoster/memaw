@@ -179,3 +179,58 @@ Memory resource that always allocates and frees memory via direct system calls t
 | **is_granular** | enables [**granular_resource**](#granular_resource) |
 | **is_sweeping** | enables [**sweeping_resource**](#sweeping_resource) |
 | **is_thread_safe** | enables [**thread_safe_resource**](#thread_safe_resource) |
+
+### os_resource::allocate
+<sub>Defined in header [&lt;memaw/os_resource.hpp&gt;](/include/memaw/os_resource.hpp)</sub>
+```c++
+template <page_type P = page_types::regular_t>
+[[nodiscard]] static void* allocate(size_t size, size_t alignment = alignof(std::max_align_t),
+                                    P page_type = {});
+```
+Allocates (full pages of) memory of the given size and alignment directly from the OS, using pages of the specified type.
+
+The page type can be either:
+* [**page_types::regular**](#page_types) to request regular memory pages of size [**get_page_size()**](#os_resourceget_page_size);
+* [**page_types::big**](#page_types) to request the default big memory pages. On Linux the big (huge) pages of the default size (as possibly returned from [**get_big_page_size()**](#os_resourceget_big_page_size)) will be requested. Windows may (or may not) decide for itself what big (large) page sizes to use (and may even use several at a time) depending on the size and alignment values. For other systems, no promises of the real page type(s) are made;
+* **pow2_t** with the exact page size value. On Linux (with procfs mounted at /proc) and Windows 10+ (or Server 2016+) must be one of the values returned from [**get_available_page_sizes()**](#os_resourceget_available_page_sizes). On other systems may be unsupported (and force the allocation to fail).
+
+On Windows, an attempt to acquire the _SeLockMemoryPrivilege_ for the process will be made if this function is called with a non-regular page type. If that fails (e.g., if the user running the process doesn't have that privilege), all big (large) pages allocations will fail as well.
+
+The alignment of the resulting address is at least as big as [**guaranteed_alignment(page_type)**](#os_resourceguaranteed_alignment). If the requested alignment is greater than that value, then note that:
+* on Linux the allocation result is always aligned by the page size used (i.e., [**get_page_size()**](#os_resourceget_page_size) for [**page_types::regular**](#page_types), *[**get_big_page_size()**](#os_resourceget_big_page_size) for [**page_types::big**](#page_types) and the value of `page_type` otherwise), and the allocation with bigger alignment will fail since we choose to not implicitly allocate additional memory in that case;
+* on latest versions of Windows (10+, Server 2016+), any alignment can be requested independent of the page type (but the allocation may still fail if no matching address is available). On earlier versions, only granularity (as returned by [**guaranteed_alignment(page_type)**](#os_resourceguaranteed_alignment)) alignment is supported (otherwise, the allocation will fail);
+* on other systems, alignments bigger than the page size may or may not be supported (but note that if this implementation doesn't know how to guarantee the requested alignment on the current system, it will return nullptr without making a system call).
+
+**Parameters**
+
+* `size` must be a multiple of [**min_size(page_type)**](#os_resourcemin_size), otherwise the allocation will fail
+* `alignment` must be a power of 2. On some systems (see above) the allocation will fail if this value is greater than [**guaranteed_alignment(page_type)**](#os_resourceguaranteed_alignment)
+* `page_type` can be [**page_types::regular**](#page_types), [**page_types::big**](#page_types) or **pow2_t** with the exact page size value (see above for the detailed description and limitations)
+
+---
+
+<sub>Defined in header [&lt;memaw/os_resource.hpp&gt;](/include/memaw/os_resource.hpp)</sub>
+```c++
+  template <__detail::same_as_either<page_types::regular_t,
+                                     page_types::big_t> P>
+  [[nodiscard]] static void* allocate(size_t size, P) noexcept;
+```
+An overload of the main allocation function that allows to avoid specifying alignment. See above for detailed description.
+
+---
+
+### os_resource::deallocate
+<sub>Defined in header [&lt;memaw/os_resource.hpp&gt;](/include/memaw/os_resource.hpp)</sub>
+```c++
+static void deallocate(void* ptr, size_t size,
+                       size_t /*alignment, ignored */= 1) noexcept;
+```
+Deallocates the previously allocated region or several adjacent regions of memory.
+
+**Parameters**
+* `ptr` must be the pointer to the beginning of the (first) region, returned from a previous call to [**allocate()**](#os_resourceallocate)
+* `size` must be the value of the size argument passed to the [**allocate()**](#os_resourceallocate) call that resulted in allocation of the region (in case of a single region deallocation) or the exact sum of all those arguments (in case of several adjacent regions deallocation)
+* `alignment` parameter is always ignored and present only for interface compatibility reasons
+
+> [!WARNING]
+> All memory in range [ptr, ptr + size) must be accessible (i.e., not previously deallocated), otherwise the behaviour is undefined.
