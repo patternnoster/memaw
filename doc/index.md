@@ -234,3 +234,69 @@ Deallocates the previously allocated region or several adjacent regions of memor
 
 > [!WARNING]
 > All memory in range [ptr, ptr + size) must be accessible (i.e., not previously deallocated), otherwise the behaviour is undefined.
+
+---
+
+### os_resource::get_available_page_sizes
+<sub>Defined in header [&lt;memaw/os_resource.hpp&gt;](/include/memaw/os_resource.hpp)</sub>
+```c++
+static std::ranges::range auto get_available_page_sizes() noexcept;
+```
+Returns all the available page sizes on the system, that are known and supported in a **pow2_t**-valued range.
+
+Always contains the regular page size (as returned from [**get_page_size()**](#os_resourceget_page_size)), and the result of [**get_big_page_size()**](#os_resourceget_big_page_size), if any. On Linux additionally returns all the supported huge page sizes (as listed in /sys/kernel/mm/hugepages/). On other systems, no additional entries are guaranteed, even if supported (but may still appear, like in case of Windows on **x86_64** with the **pdpe1gb** CPU flag)
+
+> [!NOTE]
+> This method enlisting a value does not guarantee a successful big page allocation of that size.
+
+---
+
+### os_resource::get_big_page_size
+<sub>Defined in header [&lt;memaw/os_resource.hpp&gt;](/include/memaw/os_resource.hpp)</sub>
+```c++
+static std::optional<pow2_t> get_big_page_size() noexcept;
+```
+Get the size of a (default) big page if it is known and available on the system.
+
+On Linux, returns the default big (huge) page size (as given in /proc/meminfo), if any. On Windows returns the minimum big (large) page size available (usually 2MiB). On other systems, may return an empty optional even if big pages are supported.
+
+> [!NOTE]
+> This method returning a value does not itself guarantee a successful big page allocation (e.g., Windows requires additional permissions, on Linux preallocated huge pages must be available etc.).
+
+---
+
+### os_resource::get_page_size
+<sub>Defined in header [&lt;memaw/os_resource.hpp&gt;](/include/memaw/os_resource.hpp)</sub>
+```c++
+static pow2_t get_page_size() noexcept;
+```
+Get the size of a (regular) system memory page (usually 4KiB).
+
+---
+
+### os_resource::guaranteed_alignment
+<sub>Defined in header [&lt;memaw/os_resource.hpp&gt;](/include/memaw/os_resource.hpp)</sub>
+```c++
+template <page_type P = page_types::regular_t>
+static pow2_t guaranteed_alignment(P page_type = {}) noexcept;
+```
+Returns the known minimum alignment that any allocated with the specified page type address will have (regardless of the alignment argument).
+
+> [!NOTE]
+> The result is always >= [**min_size(page_type)**](#os_resourcemin_size), but may be bigger on some systems (e.g. with regular pages on Windows).
+
+---
+
+### os_resource::min_size
+<sub>Defined in header [&lt;memaw/os_resource.hpp&gt;](/include/memaw/os_resource.hpp)</sub>
+```c++
+template <page_type P = page_types::regular_t>
+static pow2_t min_size(P page_type = {}) noexcept;
+```
+Returns the known minimum size limit for allocations with the specified page type.
+
+**Return value**
+
+* for [**page_types::regular**](#page_typesregular), [**get_page_size()**](#os_resourceget_page_size);
+* for [**page_types::big**](#page_typesbig), [**get_big_page_size()**](#os_resourceget_big_page_size) if it's defined, or of [**get_page_size()**](#os_resourceget_page_size) if it's not;
+* for explicitly specified page size, its value.
