@@ -300,3 +300,66 @@ Returns the known minimum size limit for allocations with the specified page typ
 * for [**page_types::regular**](#page_typesregular), [**get_page_size()**](#os_resourceget_page_size);
 * for [**page_types::big**](#page_typesbig), [**get_big_page_size()**](#os_resourceget_big_page_size) if it's defined, or of [**get_page_size()**](#os_resourceget_page_size) if it's not;
 * for explicitly specified page size, its value.
+
+---
+
+### page_type
+<sub>Defined in header [&lt;memaw/os_resource.hpp&gt;](/include/memaw/os_resource.hpp)</sub>
+```c++
+template <typename T>
+concept page_type =
+  __detail::same_as_either<T, page_types::regular_t, page_types::big_t, pow2_t>;
+```
+The concept of a type that denotes the size of a system memory page and must be either one of the tags in [**page_types**](#page_types) or **pow2_t** for explicit size specification.
+
+---
+
+### page_types
+<sub>Defined in header [&lt;memaw/os_resource.hpp&gt;](/include/memaw/os_resource.hpp)</sub>
+```c++
+struct page_types;
+```
+Tags for the types of system memory pages available for allocation.
+
+#### Constants
+
+| Name | Description |
+|---|---|
+| **big** | a (constexpr static) constant of type **page_types::big_t** to denote big pages |
+| **regular** | a  (constexpr static) constant of type **page_types::regular_t** to denote regular pages |
+
+---
+
+### enable_granular_resource
+<sub>Defined in header [&lt;memaw/concepts.hpp&gt;](/include/memaw/concepts.hpp)</sub>
+```c++
+template <bound_resource R>
+constexpr bool enable_granular_resource = requires {
+  { std::bool_constant<R::is_granular>{} } -> std::same_as<std::true_type>;
+};
+```
+A specializable global constant that enables the [**granular_resource**](#granular_resource) concept (see below) for R. By default, true iff R defines a constexpr member `R::is_granular` implicitly convertible to true.
+
+---
+
+### enable_sweeping_resource
+<sub>Defined in header [&lt;memaw/concepts.hpp&gt;](/include/memaw/concepts.hpp)</sub>
+```c++
+template <resource R>
+constexpr bool enable_sweeping_resource = requires {
+  { std::bool_constant<R::is_sweeping>{} } -> std::same_as<std::true_type>;
+};
+```
+A specializable global constant that enables the [**sweeping_resource**](#sweeping_resource) concept (see below) for R. By default, true iff R defines a constexpr member `R::is_sweeping` implicitly convertible to true.
+
+---
+
+### enable_thread_safe_resource
+<sub>Defined in header [&lt;memaw/concepts.hpp&gt;](/include/memaw/concepts.hpp)</sub>
+```c++
+template <resource R>
+constexpr bool enable_thread_safe_resource = requires {
+  { std::bool_constant<R::is_thread_safe>{} } -> std::same_as<std::true_type>;
+};
+```
+A specializable global constant that enables the [**thread_safe_resource**](#thread_safe_resource) concept (see below) for R. By default, true iff R defines a constexpr member `R::is_thread_safe` implicitly convertible to true.
