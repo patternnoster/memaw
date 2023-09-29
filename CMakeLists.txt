@@ -28,4 +28,15 @@ set(INSTALL_CMAKEDIR ${CMAKE_INSTALL_LIBDIR}/cmake/memaw)
 install(EXPORT memaw
   FILE memawConfigTargets.cmake
   DESTINATION ${INSTALL_CMAKEDIR})
-install(FILES cmake/memawConfig.cmake DESTINATION ${INSTALL_CMAKEDIR})
+
+include(cmake/GitVersion.cmake)
+get_git_version(GIT_VERSION)
+
+include(CMakePackageConfigHelpers)
+set(VERSION_FILE ${CMAKE_CURRENT_BINARY_DIR}/memawConfigVersion.cmake)
+write_basic_package_version_file(${VERSION_FILE}
+  VERSION ${GIT_VERSION}
+  COMPATIBILITY AnyNewerVersion)
+
+install(FILES cmake/memawConfig.cmake ${VERSION_FILE}
+  DESTINATION ${INSTALL_CMAKEDIR})
