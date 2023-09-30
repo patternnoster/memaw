@@ -22,6 +22,14 @@ The library is still work in progress. See below for the list of features implem
 | [**os_resource**](#os_resource) | memory resource that always allocates and frees memory via direct system calls to the OS |
 | [**pages_resource**](#pages_resource) | a wrapper around [**os_resource**](#os_resource), allocating memory directly from the OS using pages of the statically specified size |
 
+### Resource aliases
+
+| Name | Description |
+|---|---|
+| [**big_pages_resource**](#big_pages_resource) | a resource that allocates big (huge, large, super-) pages directly from the OS using system defaults |
+| [**fixed_pages_resource**](#fixed_pages_resource) | a resource that allocates pages of the given fixed size directly from the OS |
+| [**regular_pages_resource**](#regular_pages_resource) | a resource that allocates pages of regular system size directly from the OS |
+
 ### Helper concepts and types
 
 | Name | Description |
@@ -386,6 +394,34 @@ constexpr static pow2_t guaranteed_alignment() noexcept requires(explicit_size);
 static pow2_t guaranteed_alignment() noexcept requires(!explicit_size);
 ```
 Get the minimum alignment every allocated address has.
+
+---
+
+### big_pages_resource
+<sub>Defined in header [&lt;memaw/pages_resource.hpp&gt;](/include/memaw/pages_resource.hpp)</sub>
+```c++
+using big_pages_resource = pages_resource<page_types::big>;
+```
+A resource that allocates big (huge, large, super-) pages directly from the OS using system defaults.
+
+---
+
+### fixed_pages_resource
+<sub>Defined in header [&lt;memaw/pages_resource.hpp&gt;](/include/memaw/pages_resource.hpp)</sub>
+```c++
+template <size_t _size> requires(is_pow2(_size))
+using fixed_pages_resource = pages_resource<pow2_t(_size, pow2_t::exact)>;
+```
+A resource that allocates pages of the given fixed size directly from the OS.
+
+---
+
+### regular_pages_resource
+<sub>Defined in header [&lt;memaw/pages_resource.hpp&gt;](/include/memaw/pages_resource.hpp)</sub>
+```c++
+using regular_pages_resource = pages_resource<page_types::regular>;
+```
+A resource that allocates pages of regular system size directly from the OS (same as [**os_resource**](#os_resource)).
 
 ---
 
