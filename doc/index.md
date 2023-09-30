@@ -20,6 +20,7 @@ The library is still work in progress. See below for the list of features implem
 | Name | Description |
 |---|---|
 | [**os_resource**](#os_resource) | memory resource that always allocates and frees memory via direct system calls to the OS |
+| [**pages_resource**](#pages_resource) | a wrapper around [**os_resource**](#os_resource), allocating memory directly from the OS using pages of the statically specified size |
 
 ### Helper concepts and types
 
@@ -327,6 +328,75 @@ Tags for the types of system memory pages available for allocation.
 |---|---|
 | **big** | a (constexpr static) constant of type **page_types::big_t** to denote big pages |
 | **regular** | a  (constexpr static) constant of type **page_types::regular_t** to denote regular pages |
+
+---
+
+### pages_resource
+<sub>Defined in header [&lt;memaw/pages_resource.hpp&gt;](/include/memaw/pages_resource.hpp)</sub>
+```c++
+template <page_type auto _type>
+class pages_resource;
+```
+A wrapper around [**os_resource**](#os_resource), allocating memory directly from the OS using pages of the statically specified size.
+
+#### Member functions
+
+| Name | Description |
+|---|---|
+| [**allocate**](#pages_resourceallocate) | allocate a region of memory of the given size and alignment with a direct syscall |
+| [**deallocate**](#pages_resourcedeallocate) | deallocate a previously allocated region of memory |
+| [**guaranteed_alignment**](#pages_resourceguaranteed_alignment) | get the minimum alignment every allocated address has |
+| [**min_size**](#pages_resourcemin_size) | get the minimum allocation size for this resource |
+| **operator==** | the default equality comparison operator (always returns true) |
+| **pages_resource** | the default constructor (no-op) |
+
+#### Constants
+
+| Name | Description |
+|---|---|
+| **is_granular** | enables [**granular_resource**](#granular_resource) |
+| **is_sweeping** | enables [**sweeping_resource**](#sweeping_resource) |
+| **is_thread_safe** | enables [**thread_safe_resource**](#thread_safe_resource) |
+
+### pages_resource::allocate
+<sub>Defined in header [&lt;memaw/pages_resource.hpp&gt;](/include/memaw/pages_resource.hpp)</sub>
+```c++
+[[nodiscard]] static void* allocate(size_t size,
+                                    size_t alignment = alignof(std::max_align_t)) noexcept;
+```
+Allocate a region of memory of the given size and alignment with a direct syscall (see [**os_resource::allocate()**](#os_resourceallocate) for details).
+
+---
+
+### pages_resource::deallocate
+<sub>Defined in header [&lt;memaw/pages_resource.hpp&gt;](/include/memaw/pages_resource.hpp)</sub>
+```c++
+static void deallocate(void* ptr, size_t size,
+                       size_t /*alignment, ignored */= 1) noexcept;
+```
+Deallocate a previously allocated region of memory (see [**os_resource::deallocate()**](#os_resourcedeallocate) for details).
+
+---
+
+### pages_resource::guaranteed_alignment
+<sub>Defined in header [&lt;memaw/pages_resource.hpp&gt;](/include/memaw/pages_resource.hpp)</sub>
+```c++
+constexpr static pow2_t guaranteed_alignment() noexcept requires(explicit_size);
+
+static pow2_t guaranteed_alignment() noexcept requires(!explicit_size);
+```
+Get the minimum alignment every allocated address has.
+
+---
+
+### pages_resource::min_size
+<sub>Defined in header [&lt;memaw/pages_resource.hpp&gt;](/include/memaw/pages_resource.hpp)</sub>
+```c++
+constexpr static pow2_t min_size() noexcept requires(explicit_size);
+
+static pow2_t min_size() noexcept requires(!explicit_size);
+```
+Get the minimum allocation size for this resource.
 
 ---
 
