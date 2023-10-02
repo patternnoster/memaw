@@ -181,4 +181,42 @@ concept nothrow_resource = resource<R>
   { res.deallocate(ptr, size, alignment) } noexcept;
 };
 
+/**
+ * @brief A specializable global constant that enables the
+ *        interchangeable_resource_with concept (see below) for R1 and
+ *        R2 and vice versa. By default, true iff R1 defines a
+ *        template constexpr member R1::is_interchangeable_with<R2>
+ *        implicitly convertible to true
+ **/
+template <resource R1, resource R2>
+constexpr bool enable_interchangeable_resources = requires {
+  { std::bool_constant<R1::template is_interchangeable_with<R2>>{} }
+    -> std::same_as<std::true_type>;
+};
+
+/**
+ * @brief The concept of resources any two instances of which can
+ *        safely deallocate memory allocated by the other.
+ *
+ * To mark resources as interchangeable one has to specialize the
+ * constant enable_interchangeable_resources to true. If then the
+ * above condition is not satisfied, the behaviour of the program is
+ * undefined.
+ *
+ * Alternatively to mark a resource as interchangeable with itself
+ * (meaning any two instances of it can process each other
+ * deallocation calls) one can make its operator== and operator!=
+ * return a type implicitly and constexpr-convertible to true and
+ * false respectively (e.g., std::(true/false)_type).
+ *
+ * @note Interchangeability is not an equivalence relation: while
+ *       symmetric, it is neither transitive nor even necessarily
+ *       reflexive
+ */
+template <typename R1, typename R2>
+concept interchangeable_resource_with = resource<R1> && resource<R2>
+  && (std::same_as<R1, R2> && __detail::equal_instances<R1>
+      || enable_interchangeable_resources<R1, R2>
+      || enable_interchangeable_resources<R2, R1>);
+
 } // namespace memaw
