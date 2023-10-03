@@ -49,6 +49,8 @@ public:
   constexpr static bool is_sweeping = true;
   constexpr static bool is_thread_safe = true;
 
+  constexpr static bool has_equal_instances = true;
+
   constexpr os_resource() noexcept = default;
 
   /**
@@ -219,8 +221,6 @@ public:
                          const size_t /*alignment, ignored */= 1) noexcept {
     __detail::os_mapper::unmap(ptr, size);
   }
-
-  constexpr bool operator==(const os_resource&) const noexcept = default;
 };
 
 } // namespace memaw

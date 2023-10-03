@@ -31,4 +31,11 @@ TYPED_TEST(PagesResourcesTests, concepts) {
   EXPECT_TRUE(sweeping_resource<TypeParam>);
   EXPECT_TRUE(thread_safe_resource<TypeParam>);
   EXPECT_TRUE(nothrow_resource<TypeParam>);
+
+  []<typename... Ts>(const testing::Types<Ts...>) {
+    const auto test = []<typename T>() {
+      EXPECT_TRUE((interchangeable_resource_with<TypeParam, T>));
+    };
+    (test.template operator()<Ts>(), ...);
+  }(PagesResources{});
 }

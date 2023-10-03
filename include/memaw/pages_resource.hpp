@@ -1,7 +1,9 @@
 #pragma once
+#include <concepts>
 #include <nupp/pow2_t.hpp>
 #include <type_traits>
 
+#include "concepts.hpp"
 #include "os_resource.hpp"
 
 /**
@@ -27,6 +29,11 @@ public:
   constexpr static bool is_granular = true;
   constexpr static bool is_sweeping = true;
   constexpr static bool is_thread_safe = true;
+
+  constexpr static bool has_equal_instances = true;
+
+  template <std::same_as<os_resource>>
+  constexpr static bool is_interchangeable_with = true;
 
   constexpr static bool explicit_size = std::same_as<page_type_t, pow2_t>;
 
@@ -74,9 +81,11 @@ public:
                          const size_t /*alignment, ignored */= 1) noexcept {
     os_resource::deallocate(ptr, size);
   }
-
-  constexpr bool operator==(const pages_resource&) const noexcept = default;
 };
+
+template <page_type auto _ltype, page_type auto _rtype>
+constexpr bool enable_interchangeable_resources<pages_resource<_ltype>,
+                                                pages_resource<_rtype>> = true;
 
 /**
  * @brief A resource that allocates pages of regular system size
