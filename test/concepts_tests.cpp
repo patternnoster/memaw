@@ -35,6 +35,7 @@ TYPED_TEST(PagesResourcesTests, concepts) {
   []<typename... Ts>(const testing::Types<Ts...>) {
     const auto test = []<typename T>() {
       EXPECT_TRUE((interchangeable_resource_with<TypeParam, T>));
+      EXPECT_TRUE((substitutable_resource_for<TypeParam, T>));
     };
     (test.template operator()<Ts>(), ...);
   }(PagesResources{});

@@ -215,8 +215,49 @@ constexpr bool enable_interchangeable_resources = requires {
  */
 template <typename R1, typename R2>
 concept interchangeable_resource_with = resource<R1> && resource<R2>
-  && (std::same_as<R1, R2> && __detail::equal_instances<R1>
+  && ((std::same_as<R1, R2> && __detail::equal_instances<R1>)
       || enable_interchangeable_resources<R1, R2>
       || enable_interchangeable_resources<R2, R1>);
+
+/**
+ * @brief A specializable global constant that enables the
+ *        substitutable_resource_for concept (see below) for R1 and
+ *        R2. By default, true iff R1 defines a template constexpr
+ *        member R1::is_substitutable_for<R2> implicitly convertible
+ *        to true
+ **/
+template <resource R1, resource R2>
+constexpr bool enable_substitutable_resource_for = requires {
+  { std::bool_constant<R1::template is_substitutable_for<R2>>{} }
+    -> std::same_as<std::true_type>;
+};
+
+/**
+ * @brief The concept of a resource that can safely accept all
+ *        deallocation calls from a particular instance of another
+ *        resource
+ *
+ * More formally, given instances r1 and r2, for every valid call
+ * r2.deallocate(ptr, size, alignment) a call r1.deallocate(ptr, size,
+ * alignment) is also valid, assuming no calls to r2.deallocate() has
+ * been made, and all the memory is freed by the time both destructors
+ * return.
+ *
+ * Obviously, if R1 and R2 are interchangeable, then this is always
+ * true. If they are not then one can specialize the global constant
+ * enable_substitutable_resource_for to make a resource substitutable
+ * for another (in case the semantic requirement above is met)
+ *
+ * @note  This is a much weaker concept than interchangeable_with. It
+ *        is not symmetric and only requires validity when all (and
+ *        not some) of the deallocation calls from a particular
+ *        instance of R2 are redirected to a particular instance of R1
+ * @note  If R1 is sweeping, then it must accept mixed adjacent regions
+ *        from both resources (if possible)
+ **/
+template <typename R1, typename R2>
+concept substitutable_resource_for = resource<R1> && resource<R2>
+  && (interchangeable_resource_with<R1, R2>
+      || enable_substitutable_resource_for<R1, R2>);
 
 } // namespace memaw
