@@ -39,14 +39,38 @@ public:
    *        calls have failed
    **/
   [[nodiscard]] void* allocate
-    (size_t size, size_t alignment = alignof(std::max_align_t)) noexcept;
+    (const size_t size,
+     const size_t alignment = alignof(std::max_align_t)) noexcept {
+    return do_allocate(size, alignment).first;
+  }
+
+  /**
+   * @brief Same as allocate() but returns a pair of the resulting
+   *        pointer and the index of the resource that performed the
+   *        allocation
+   **/
+  [[nodiscard]] std::pair<void*, size_t> do_allocate
+    (const size_t size,
+     const size_t alignment = alignof(std::max_align_t)) noexcept {
+    return {};
+  }
 
   /**
    * @brief Deallocates memory previously allocated by the chain by
    *        forwarding the call to one of the resources in it
    **/
-  void deallocate(void* ptr, size_t size,
-                  size_t alignment = alignof(std::max_align_t)) noexcept;
+  void deallocate(void* const ptr, const size_t size,
+                  const size_t alignment = alignof(std::max_align_t)) noexcept {
+  }
+
+  /**
+   * @brief Deallocates memory previously allocated by the chain by
+   *        forwarding the call to the resource at the given index
+   **/
+  void deallocate_with(const size_t idx, void* const ptr, const size_t size,
+                       const size_t alignment = alignof(std::max_align_t))
+    noexcept((__detail::has_nothrow_deallocate<Rs> && ...)) {
+  }
 
   constexpr bool operator==(const chain_resource&) const
     noexcept((__detail::nothrow_equality_comparable<Rs> && ...)) = default;

@@ -21,6 +21,19 @@ concept nothrow_equality_comparable = std::equality_comparable<T>
   {t != t} noexcept;
 };
 
+template <typename R>
+concept has_nothrow_allocate = requires(R res, size_t size, size_t alignment) {
+  { res.allocate(size) } noexcept;
+  { res.allocate(size, alignment) } noexcept;
+};
+
+template <typename R>
+concept has_nothrow_deallocate = requires(R res, void* ptr, size_t size,
+                                          size_t alignment) {
+  { res.deallocate(ptr, size) } noexcept;
+  { res.deallocate(ptr, size, alignment) } noexcept;
+};
+
 template <typename T, typename... Ts>
 concept same_as_either = (... || std::same_as<T, Ts>);
 
