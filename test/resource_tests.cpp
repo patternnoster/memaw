@@ -1,13 +1,17 @@
 #include <cstdint>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <new>
 #include <nupp/pow2_t.hpp>
 #include <utility>
 #include <vector>
 
+#include "memaw/chain_resource.hpp"
 #include "memaw/literals.hpp"
 #include "memaw/os_resource.hpp"
 #include "memaw/pages_resource.hpp"
+
+#include "test_resource.hpp"
 
 using namespace memaw;
 
@@ -225,4 +229,37 @@ TEST(PagesResourceTests, base) {
   reg.deallocate(reg_ptr, reg.min_size());
   big.deallocate(big_ptr, big.min_size());
   fixed.deallocate(fixed_ptr, fixed.min_size());
+}
+
+using testing::_;
+using testing::Return;
+
+TEST(ChainResourceTests, allocation) {
+  mock_resource m1, m2, m3;
+
+  constexpr resource_params nothrow_params = { .nothrow_alloc = true };
+  chain_resource chain{ test_resource<nothrow_params>(m1),
+                        test_resource(m2),
+                        test_resource<nothrow_params, 1>(m3) };
+
+  EXPECT_CALL(m1, allocate(_, _)).Times(3).WillRepeatedly(Return(&m1));
+  EXPECT_CALL(m2, allocate(_, _)).Times(1).WillOnce(Return(&m2));
+  EXPECT_CALL(m3, allocate(_, _)).Times(1).WillOnce(Return(&m3));
+
+  EXPECT_CALL(m1, allocate(_, _)).Times(3).WillRepeatedly(Return(nullptr))
+    .RetiresOnSaturation();
+  EXPECT_CALL(m2, allocate(_, _)).Times(2)
+    .WillOnce([](size_t, size_t) -> void* { throw std::bad_alloc{}; })
+    .WillOnce(Return(nullptr)).RetiresOnSaturation();
+  EXPECT_CALL(m3, allocate(_, _)).Times(1).WillOnce(Return(nullptr))
+    .RetiresOnSaturation();
+
+  using result_t = std::pair<void*, size_t>;
+
+  EXPECT_EQ(chain.do_allocate(1), (result_t{nullptr, 2}));
+  EXPECT_EQ(chain.do_allocate(1), (result_t{&m3, 2}));
+  EXPECT_EQ(chain.do_allocate(1), (result_t{&m2, 1}));
+
+  for (size_t i = 0; i < 3; ++i)
+    EXPECT_EQ(chain.do_allocate(1), (result_t{&m1, 0}));
 }
