@@ -5,6 +5,8 @@
 
 #include "concepts.hpp"
 
+#include "__detail/chain_resource_impl.hpp"
+
 /**
  * @file
  * A resource adaptor that combines several resources in a chain
@@ -18,6 +20,17 @@ namespace memaw {
 /**
  * @brief  Memory resource adaptor that sequentially tries every
  *         resource in a given list until a successful allocation
+ *
+ * The deallocate() call to the chain will, by default, be forwarded
+ * to the first resource in the list that is substitutable_for all the
+ * other resources. The dispatch_deallocate() template (see below) can
+ * be specialized to alter that behaviour.
+ *
+ * If no such resource and no specialization of the dispatch template
+ * exists, the default deallocate() method will be unavailable (thus,
+ * the chain won't model the resource concept) and one should use the
+ * deallocate_with() method (that takes an additional index argument)
+ * instead
  **/
 template <resource... Rs> requires(sizeof...(Rs) > 0)
 class chain_resource {
@@ -56,8 +69,34 @@ public:
   }
 
   /**
+   * @brief Chooses the resource in the chain that will service the
+   *        deallocate() call
+   *
+   * By default, only declared for chains that have a resource that is
+   * substitutable_for all the other resources (in which case returns
+   * the index of the first such resource). Can be overloaded,
+   * returning any type convertible to size_t.
+   *
+   * If the index is constant and known at compile-time (as in the
+   * default scenario), std::integral_constant (or a similar type)
+   * should be returned as it allows to deduce some compile-time
+   * features (e.g., if the chain models substitutable_for or if the
+   * deallocation is noexcept in case that's not true for all the
+   * resources in the chain), and, additionally, can lead to
+   * generating more efficient code on some compilers (e.g., MSVC)
+   **/
+  template <resource... Us>
+    requires(__detail::resource_list<Us...>::has_universal_deallocator)
+  friend std::integral_constant
+    <size_t, __detail::resource_list<Us...>::universal_deallocator_id>
+    dispatch_deallocate(const chain_resource<Us...>&, void*, size_t, size_t);
+
+  /**
    * @brief Deallocates memory previously allocated by the chain by
-   *        forwarding the call to one of the resources in it
+   *        forwarding the call to one of the resources in it, using
+   *        the dispatch_deallocate() (see above) function to get its
+   *        index, and is only defined if such method is declared for
+   *        the chain
    **/
   void deallocate(void* const ptr, const size_t size,
                   const size_t alignment = alignof(std::max_align_t)) noexcept {
