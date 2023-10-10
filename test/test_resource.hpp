@@ -34,6 +34,9 @@ struct test_resource {
   test_resource() = default;
   test_resource(mock_resource& _mock) noexcept: mock(&_mock) {}
 
+  template <typename T>
+  test_resource(const T& rhs) noexcept: mock(rhs.mock) {}
+
   static size_t min_size() noexcept requires(_params.min_size > 0) {
     return _params.min_size;
   }

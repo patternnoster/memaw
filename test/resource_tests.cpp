@@ -263,3 +263,52 @@ TEST(ChainResourceTests, allocation) {
   for (size_t i = 0; i < 3; ++i)
     EXPECT_EQ(chain.do_allocate(1), (result_t{&m1, 0}));
 }
+
+template <size_t _idx = 0>
+using chain_t =
+  chain_resource<test_resource<resource_params{ .group = {1, 3} }, _idx>,
+                 test_resource<resource_params{ .group = {0, 2} }, _idx>,
+                 test_resource<resource_params{ .group = {2, 2} }, _idx>>;
+
+std::integral_constant<size_t, 2>
+  dispatch_deallocate(const chain_t<1>&, void*, size_t, size_t);
+
+size_t dispatch_deallocate(const chain_t<2>&, void*, size_t, size_t) {
+  static size_t i = 0;
+  return (i++) % 3;
+}
+
+TEST(ChainResourceTests, deallocation) {
+  mock_resource m1, m2, m3;
+
+  chain_t<0> chain0{test_resource(m1), test_resource(m2),
+                    test_resource(m3)};
+  chain_t<1> chain1{test_resource(m1), test_resource(m2),
+                    test_resource(m3)};
+  chain_t<2> chain2{test_resource(m1), test_resource(m2),
+                    test_resource(m3)};
+
+  EXPECT_TRUE(resource<chain_t<0>>);
+  EXPECT_TRUE(resource<chain_t<1>>);
+  EXPECT_TRUE(resource<chain_t<2>>);
+
+  const auto expect_calls = [&m1, &m2, &m3]
+    (const int count1, const int count2, const int count3) {
+    EXPECT_CALL(m1, deallocate(_, 0, _)).Times(count1);
+    EXPECT_CALL(m2, deallocate(_, 1, _)).Times(count2);
+    EXPECT_CALL(m3, deallocate(_, 2, _)).Times(count3);
+  };
+
+  expect_calls(0, 1, 0);
+  chain0.deallocate(nullptr, 1);
+
+  expect_calls(0, 0, 1);
+  chain1.deallocate(nullptr, 2);
+
+  expect_calls(2, 2, 2);
+  for (size_t i = 0; i < 6; ++i)
+    chain2.deallocate(nullptr, i % 3);
+
+  expect_calls(1, 0, 0);
+  chain1.deallocate_with(0, nullptr, 0);
+}
