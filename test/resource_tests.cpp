@@ -231,6 +231,41 @@ TEST(PagesResourceTests, base) {
   fixed.deallocate(fixed_ptr, fixed.min_size());
 }
 
+template <size_t _min_size, size_t _alignment, bool _granular>
+constexpr resource_params sized_resource_params =  // workaround for MSVC
+  { .min_size = _min_size, .alignment = _alignment, .is_granular = _granular };
+
+template <size_t _min_size = 0, size_t _alignment = 0, bool _granular = false>
+using sized_resource =
+  test_resource<sized_resource_params<_min_size, _alignment, _granular>>;
+
+TEST(ChainResourceTests, static_info) {
+  using chain1_t =
+    chain_resource<sized_resource<5>, sized_resource<0>, sized_resource<7>,
+                   sized_resource<0>, sized_resource<3>, sized_resource<0>>;
+  using chain2_t =
+    chain_resource<sized_resource<0>, sized_resource<5, 0, true>,
+                   sized_resource<0>, sized_resource<7, 0, true>,
+                   sized_resource<3, 0 ,true>, sized_resource<0>>;
+  using chain3_t =
+    chain_resource<sized_resource<8, 128>, sized_resource<5, 64, true>,
+                   sized_resource<100, 128>, sized_resource<7, 256, true>>;
+
+  EXPECT_TRUE(bound_resource<chain1_t>);
+  EXPECT_TRUE(bound_resource<chain2_t>);
+  EXPECT_TRUE(bound_resource<chain3_t>);
+
+  EXPECT_EQ(chain1_t::min_size(), 7);
+  EXPECT_EQ(chain2_t::min_size(), 105);
+  EXPECT_EQ(chain3_t::min_size(), 700);
+
+  EXPECT_FALSE(overaligning_resource<chain1_t>);
+  EXPECT_FALSE(overaligning_resource<chain2_t>);
+  EXPECT_TRUE(overaligning_resource<chain3_t>);
+
+  EXPECT_EQ(chain3_t::guaranteed_alignment(), 64);
+}
+
 using testing::_;
 using testing::Return;
 
