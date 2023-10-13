@@ -45,6 +45,34 @@ public:
     : resources_(std::move(resources)...) {}
 
   /**
+   * @brief Returns the minimum allocation size, defined iff any of
+   *        the resources in the chain are bound.
+   *
+   * If defined, equals the smallest number n such that:
+   * - for any bound_resource R in the chain, n >= R::min_size();
+   * - for any granular_resource R in the chain, n is also a multiple
+   *   of R::min_size()
+   *
+   * @note  If such n is not representable as size_t, the behaviour is
+   *        undefined
+   **/
+  constexpr static size_t min_size() noexcept
+    requires(bound_resource<Rs> || ...) {
+    return __detail::resource_list<Rs...>::get_min_size();
+  }
+
+  /**
+   * @brief Returns the guaranteed alignment of all the memory
+   *        addresses allocated by the chain, defined iff all of the
+   *        resources in the chain are overaligning (and equals the
+   *        minimum of all their guaranteed_alignment()s)
+   **/
+  constexpr static pow2_t guaranteed_alignment() noexcept
+    requires(overaligning_resource<Rs> && ...) {
+    return __detail::resource_list<Rs...>::get_guaranteed_alignment();
+  }
+
+  /**
    * @brief Calls allocate() with the given size and alignment
    *        arguments on every resource in the list until the first
    *        success (i.e., a call that returned a non-null pointer)
