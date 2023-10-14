@@ -35,6 +35,34 @@ namespace memaw {
 template <resource... Rs> requires(sizeof...(Rs) > 0)
 class chain_resource {
 public:
+  /**
+   * @brief Specifies if the chain is granular (i.e., at least one of
+   *        its resources is granular)
+   **/
+  constexpr static bool is_granular = (granular_resource<Rs> || ...);
+
+  /**
+   * @brief Specifies if the chain is thread_safe (i.e., all of its
+   *        resources are thread_safe)
+   **/
+  constexpr static bool is_thread_safe = (thread_safe_resource<Rs> && ...);
+
+  /**
+   * @brief Specifies if the chain is interchangeable with the given
+   *        resource (i.e., all of its resources are interchangeable
+   *        with it)
+   **/
+  template <resource R>
+  constexpr static bool is_interchangeable_with =
+    (interchangeable_resource_with<R, Rs> && ...);
+
+  /**
+   * @brief Specifies if all the instances of the chain are equal
+   *        (i.e., all of its resources have equal_instances)
+   **/
+  constexpr static bool has_equal_instances =
+    (__detail::equal_instances<Rs> && ...);
+
   constexpr chain_resource()
     noexcept((std::is_nothrow_default_constructible_v<Rs> && ...))
     requires((std::default_initializable<Rs> && ...)) {}
@@ -140,10 +168,19 @@ public:
   }
 
   constexpr bool operator==(const chain_resource&) const
-    noexcept((__detail::nothrow_equality_comparable<Rs> && ...)) = default;
+    noexcept((__detail::nothrow_equality_comparable<Rs> && ...))
+    requires(!has_equal_instances) = default;
 
 private:
   std::tuple<Rs...> resources_;
 };
+
+/**
+ * @brief Specifies if a resource is substitutable for a chain (i.e.,
+ *        if it is substitutable for all of its resources)
+ **/
+template <resource R, resource... Rs>
+constexpr bool enable_substitutable_resource_for<R, chain_resource<Rs...>> =
+  (substitutable_resource_for<R, Rs> && ...);
 
 } // namespace memaw
