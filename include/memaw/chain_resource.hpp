@@ -176,11 +176,33 @@ private:
 };
 
 /**
+ * @brief Enables the sweeping_resource concept for chains with the
+ *        constant deallocator if the corresponding resource is sweeping
+ **/
+template <resource... Rs>
+  requires(__detail::has_constant_dispatcher<chain_resource<Rs...>>)
+constexpr bool enable_sweeping_resource<chain_resource<Rs...>> =
+  sweeping_resource<__detail::at<__detail::dispatch<chain_resource<Rs...>>,
+                                 Rs...>>;
+
+/**
  * @brief Specifies if a resource is substitutable for a chain (i.e.,
  *        if it is substitutable for all of its resources)
  **/
 template <resource R, resource... Rs>
 constexpr bool enable_substitutable_resource_for<R, chain_resource<Rs...>> =
   (substitutable_resource_for<R, Rs> && ...);
+
+/**
+ * @brief Enables the substitutable_resource_for concept for chains
+ *        with the constant deallocator if the corresponding resource
+ *        is substitutable for the given one
+ **/
+template <resource... Rs, resource R>
+  requires(__detail::has_constant_dispatcher<chain_resource<Rs...>>
+           && !requires(R r) { []<class... Ts>(chain_resource<Ts...>&){}(r); })
+constexpr bool enable_substitutable_resource_for<chain_resource<Rs...>, R> =
+  substitutable_resource_for
+    <__detail::at<__detail::dispatch<chain_resource<Rs...>>, Rs...>, R>;
 
 } // namespace memaw

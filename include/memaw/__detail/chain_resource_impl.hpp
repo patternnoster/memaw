@@ -1,7 +1,18 @@
 #pragma once
+#include <concepts>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+
 #include "../concepts.hpp"
 
 namespace memaw::__detail {
+
+/**
+ * @brief Gets the type at the specified position in a variadic list
+ **/
+template <size_t _idx, typename... Ts>
+using at = std::tuple_element_t<_idx, std::tuple<Ts...>>;
 
 template <resource... Rs>
 struct resource_list {
@@ -26,5 +37,26 @@ struct resource_list {
     return {};
   }
 };
+
+template <typename C>
+concept has_dispatcher = requires(C chain,
+                                  void* ptr, size_t size, size_t alignment) {
+  { dispatch_deallocate(chain, ptr, size, alignment) }
+    -> std::convertible_to<size_t>;
+};
+
+template <typename C>
+using dispatcher_result_t =
+  decltype(dispatch_deallocate(std::declval<C>(), nullptr, 0, 0));
+
+template <typename C>
+concept has_constant_dispatcher = has_dispatcher<C> && requires {
+  typename std::integral_constant<size_t, dispatcher_result_t<C>::value>;
+};
+
+template <typename> constexpr size_t dispatch = {};
+
+template <has_constant_dispatcher C>
+constexpr size_t dispatch<C> = dispatcher_result_t<C>::value;
 
 } // namespace memaw::__detail
