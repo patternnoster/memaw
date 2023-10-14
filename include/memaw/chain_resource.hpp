@@ -155,7 +155,13 @@ public:
    *        the chain
    **/
   void deallocate(void* const ptr, const size_t size,
-                  const size_t alignment = alignof(std::max_align_t)) noexcept {
+                  const size_t alignment = alignof(std::max_align_t))
+    noexcept((__detail::has_constant_dispatcher<chain_resource>
+              && __detail::has_nothrow_deallocate
+                   <__detail::at<__detail::dispatch<chain_resource>, Rs...>>)
+             || (__detail::has_nothrow_dispatcher<chain_resource>
+                 && ... && __detail::has_nothrow_deallocate<Rs>))
+    requires(__detail::has_dispatcher<chain_resource>) {
   }
 
   /**
