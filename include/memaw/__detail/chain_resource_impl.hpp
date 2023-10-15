@@ -18,6 +18,91 @@ using at = std::tuple_element_t<_idx, std::tuple<Ts...>>;
 // We will keep this undefined as it compiles much faster this way
 template <typename...> struct type_list;
 
+namespace tl {
+
+/* Some meta tricks with type_list we're going to use.
+ * We'll allow ourselves to have the default implementation inside the
+ * definition: this is a __detail header anyway, only the wisest ones
+ * will read it, they can figure this out */
+
+/**
+ * @brief Joins two type lists into one
+ **/
+template <typename, typename> struct join;
+
+/**
+ * @brief Breaks the type_list into two lists: those types that
+ *        satisfy the given predicate and those that don't
+ **/
+template <typename, template <typename> typename>
+struct partition {
+  template <bool> using result = type_list<>;
+};
+
+/**
+ * @brief Removes the types that don't satisfy the given predicate
+ *        from the type_list
+ **/
+template <typename L, template <typename> typename Pred>
+using filter_r = partition<L, Pred>::template result<true>;
+
+/**
+ * @brief Removes all duplicates (using std::same_as) from the
+ *        type_list
+ **/
+template <typename>
+struct unique {
+  using result = type_list<>;
+};
+
+/**
+ * @brief A functor that calls the templated operator() of F with the
+ *        types of the given list
+ **/
+template <typename> struct applicator;
+template <typename L> constexpr applicator<L> apply{};
+
+/* Now the implementations... */
+
+template <typename... Ts, typename... Us>
+struct join<type_list<Ts...>, type_list<Us...>> {
+  using result = type_list<Ts..., Us...>;
+};
+
+template <typename H, typename... Ts, template <typename> typename Pred>
+struct partition<type_list<H, Ts...>, Pred> {
+  using next_partition = partition<type_list<Ts...>, Pred>;
+
+  template <bool _b>
+  using result =
+    join<std::conditional_t<(Pred<H>::value == _b), type_list<H>, type_list<>>,
+         typename partition<type_list<Ts...>,
+                            Pred>::template result<_b>>::result;
+};
+
+template <typename H, typename... Ts>
+struct unique<type_list<H, Ts...>> {
+  template <typename T>
+  using not_same_as_head = std::bool_constant<!std::same_as<H, T>>;
+
+  using result =
+    join<type_list<H>,
+         typename unique<filter_r<type_list<Ts...>,
+                                  not_same_as_head>>::result>::result;
+};
+
+template <typename... Ts>
+struct applicator<type_list<Ts...>> {
+  constexpr applicator() noexcept = default;
+
+  template <typename F>
+  decltype(auto) operator()(F&& func) const noexcept {
+    return std::forward<F>(func).template operator()<Ts...>();
+  }
+};
+
+} // namespace tl
+
 /**
  * @brief Finds the index of the element of the given list that models
  *        substitutable_resource_for all the other elements
