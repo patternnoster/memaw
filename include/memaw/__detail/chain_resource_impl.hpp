@@ -1,5 +1,6 @@
 #pragma once
 #include <concepts>
+#include <nupp/algorithm.hpp>
 #include <optional>
 #include <tuple>
 #include <type_traits>
@@ -24,6 +25,11 @@ namespace tl {
  * We'll allow ourselves to have the default implementation inside the
  * definition: this is a __detail header anyway, only the wisest ones
  * will read it, they can figure this out */
+
+/**
+ * @brief Specifies if a type_list is empty
+ **/
+template <typename> constexpr bool empty = true;
 
 /**
  * @brief Joins two type lists into one
@@ -64,6 +70,9 @@ template <typename L> constexpr applicator<L> apply{};
 
 /* Now the implementations... */
 
+template <typename H, typename... Ts>
+constexpr bool empty<type_list<H, Ts...>> = false;
+
 template <typename... Ts, typename... Us>
 struct join<type_list<Ts...>, type_list<Us...>> {
   using result = type_list<Ts..., Us...>;
@@ -103,6 +112,12 @@ struct applicator<type_list<Ts...>> {
 
 } // namespace tl
 
+template <resource R>
+using is_bound = std::bool_constant<bound_resource<R>>;
+
+template <resource R>
+using is_granular = std::bool_constant<granular_resource<R>>;
+
 /**
  * @brief Finds the index of the element of the given list that models
  *        substitutable_resource_for all the other elements
@@ -127,6 +142,8 @@ struct universal_deallocator_finder<type_list<H, Ts...>, type_list<Us...>> {
 
 template <resource... Rs>
 struct resource_list {
+  using unique_list = tl::unique<type_list<Rs...>>::result;
+
   constexpr static std::optional<size_t> universal_deallocator =
     universal_deallocator_finder<type_list<Rs...>>::index;
 
@@ -142,7 +159,30 @@ struct resource_list {
    *        min_size() of granular resources in the list (if any)
    **/
   static auto get_min_size() noexcept requires(bound_resource<Rs> || ...) {
-    return size_t(0);
+    using granular_partition =
+      tl::partition<tl::filter_r<unique_list, is_bound>, is_granular>;
+
+    using granular = granular_partition::template result<true>;
+    using bound_non_granular = granular_partition::template result<false>;
+
+    if constexpr (tl::empty<bound_non_granular>)
+      return tl::apply<granular>([]<typename... Ts> {
+          return nupp::lcm(Ts::min_size()...);
+        });
+    else {
+      // Small trick here: since lcm is always >= than its arguments,
+      // we only need to calculate maximum for non-granular resources
+      const auto non_granular_max =
+        tl::apply<bound_non_granular>([]<typename... Ts> {
+            return nupp::maximum(Ts::min_size()...);
+          });
+
+      if constexpr (tl::empty<granular>) return non_granular_max;
+      else
+        return tl::apply<granular>([non_granular_max]<typename... Ts> {
+            return nupp::lcm(non_granular_max, Ts::min_size()...);
+          });
+    }
   }
 
   /**
@@ -151,7 +191,9 @@ struct resource_list {
    **/
   static pow2_t get_guaranteed_alignment() noexcept
     requires(overaligning_resource<Rs> && ...) {
-    return {};
+    return tl::apply<unique_list>([]<typename... Ts> {
+        return nupp::minimum(Ts::guaranteed_alignment()...);
+      });
   }
 };
 
