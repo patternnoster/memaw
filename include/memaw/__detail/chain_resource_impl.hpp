@@ -8,6 +8,15 @@
 
 #include "../concepts.hpp"
 
+/**
+ * @file
+ * The implementations of some functions and concepts used in
+ * chain_resource
+ *
+ * @author    patternnoster@github
+ * @copyright 2023, under the MIT License (see /LICENSE for details)
+ **/
+
 namespace memaw::__detail {
 
 /**
