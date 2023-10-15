@@ -70,6 +70,16 @@ struct resource_list {
   }
 };
 
+template <resource R>
+inline void* try_allocate(R& resource, const size_t size,
+                          const size_t alignment) noexcept {
+  if constexpr (has_nothrow_allocate<R>)
+    return resource.allocate(size, alignment);
+  else
+    try { return resource.allocate(size, alignment); }
+    catch (...) { return nullptr; }
+}
+
 template <typename C>
 concept has_dispatcher = requires(C chain,
                                   void* ptr, size_t size, size_t alignment) {

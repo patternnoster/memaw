@@ -2,6 +2,7 @@
 #include <concepts>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 #include "concepts.hpp"
 
@@ -117,11 +118,21 @@ public:
    * @brief Same as allocate() but returns a pair of the resulting
    *        pointer and the index of the resource that performed the
    *        allocation
+   * @note  If the resulting pointer is null (i.e., if all the
+   *        resources have been tried and have failed), the index of
+   *        the last resource is always returned, even if that call
+   *        threw an exception
    **/
   [[nodiscard]] std::pair<void*, size_t> do_allocate
     (const size_t size,
      const size_t alignment = alignof(std::max_align_t)) noexcept {
-    return {};
+    return std::apply([size, alignment](Rs&... resources) {
+      std::pair<void*, size_t> result{ nullptr, size_t(-1) };
+      ((++result.second,
+        result.first = __detail::try_allocate(resources,
+                                              size, alignment)) || ...);
+      return result;
+    }, resources_);
   }
 
   /**
@@ -162,15 +173,25 @@ public:
              || (__detail::has_nothrow_dispatcher<chain_resource>
                  && ... && __detail::has_nothrow_deallocate<Rs>))
     requires(__detail::has_dispatcher<chain_resource>) {
+    if constexpr (__detail::has_constant_dispatcher<chain_resource>)
+      std::get<__detail::dispatch<chain_resource>>(resources_)
+        .deallocate(ptr, size, alignment);
+    else
+      deallocate_with(dispatch_deallocate(*this, ptr, size, alignment),
+                      ptr, size, alignment);
   }
 
   /**
    * @brief Deallocates memory previously allocated by the chain by
    *        forwarding the call to the resource at the given index
    **/
-  void deallocate_with(const size_t idx, void* const ptr, const size_t size,
+  void deallocate_with(size_t idx, void* const ptr, const size_t size,
                        const size_t alignment = alignof(std::max_align_t))
     noexcept((__detail::has_nothrow_deallocate<Rs> && ...)) {
+    std::apply([&idx, ptr, size, alignment](Rs&... resources) {
+      (void)((!idx--
+              && (resources.deallocate(ptr, size, alignment), true)) || ...);
+    }, resources_);
   }
 
   constexpr bool operator==(const chain_resource&) const
