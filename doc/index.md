@@ -9,9 +9,11 @@ The library is still work in progress. See below for the list of features implem
 |---|---|
 | [**resource**](#resource) | the basic concept of a memory resource: can allocate and deallocate memory given size and alignment |
 | [**bound_resource**](#bound_resource) | the concept of a resource that has a (constant) minimum allocation size limit |
-| [**granular_resource**](#granular_resource) | the concepts of a bound resource that can only allocate sizes that are multiples of its minimum allocation |
+| [**granular_resource**](#granular_resource) | the concept of a bound resource that can only allocate sizes that are multiples of its minimum allocation |
+| [**interchangeable_resource_with**](#interchangeable_resource_with) | the concept of resources any two instances of which can safely deallocate memory allocated by the other |
 | [**nothrow_resource**](#nothrow_resource) | the concept of a resource whose allocation, deallocation and equality testing methods don't throw exceptions |
 | [**overaligning_resource**](#overaligning_resource) | the concept of a resource that has a (constant) guaranteed alignment greater than `alignof(std::max_align_t)` |
+| [**substitutable_resource_for**](#substitutable_resource_for) | the concept of a resource that can safely accept all deallocation calls from a particular instance of another resource |
 | [**sweeping_resource**](#sweeping_resource) | the concept of a resource that permits combining deallocations of adjacent regions into one call |
 | [**thread_safe_resource**](#thread_safe_resource) | the concept of a resource whose methods can safely be called concurrently from different threads |
 
@@ -42,6 +44,8 @@ The library is still work in progress. See below for the list of features implem
 | Name | Description |
 |---|---|
 | [**enable_granular_resource**](#enable_granular_resource) | a specializable global constant that enables the [**granular_resource**](#granular_resource) concept |
+| [**enable_interchangeable_resources**](#enable_interchangeable_resources) | a specializable global constant that enables the [**interchangeable_resource_with**](#interchangeable_resource_with) concept |
+| [**enable_substitutable_resource_for**](#enable_substitutable_resource_for) | a specializable global constant that enables the [**substitutable_resource_for**](#substitutable_resource_for) concept |
 | [**enable_sweeping_resource**](#enable_sweeping_resource) | a specializable global constant that enables the [**sweeping_resource**](#sweeping_resource) concept |
 | [**enable_thread_safe_resource**](#enable_thread_safe_resource) | a specializable global constant that enables the [**thread_safe_resource**](#thread_safe_resource) concept |
 
@@ -100,6 +104,25 @@ The concepts of a bound resource that can only allocate sizes that are multiples
 
 ---
 
+### interchangeable_resource_with
+<sub>Defined in header [&lt;memaw/concepts.hpp&gt;](/include/memaw/concepts.hpp)</sub>
+```c++
+template <typename R1, typename R2>
+concept interchangeable_resource_with = resource<R1> && resource<R2>
+  && ((std::same_as<R1, R2> && __detail::equal_instances<R1>)
+      || enable_interchangeable_resources<R1, R2>
+      || enable_interchangeable_resources<R2, R1>);
+```
+The concept of resources any two instances of which can safely deallocate memory allocated by the other.
+
+To mark resources as interchangeable one has to specialize the constant [**enable_interchangeable_resources**](#enable_interchangeable_resources) to `true`. If then the above condition is not satisfied, the behaviour of the program is undefined.
+Alternatively to mark a resource as interchangeable with itself (meaning any two instances of it can process each other deallocation calls) one can make its `operator==` and `operator!=` return a type implicitly and constexpr-convertible to true and false respectively (e.g., **std::(true/false)_type**).
+
+> [!NOTE]
+> Interchangeability is not an equivalence relation: while symmetric, it is neither transitive nor even necessarily reflexive.
+
+---
+
 ### nothrow_resource
 <sub>Defined in header [&lt;memaw/concepts.hpp&gt;](/include/memaw/concepts.hpp)</sub>
 ```c++
@@ -128,6 +151,27 @@ concept overaligning_resource = resource<R> && requires() {
 The concept of a resource that has a (constant) guaranteed alignment greater than `alignof(std::max_align_t)`. Such resources must define a static (but not necessarily constexpr) method `guaranteed_alignment()` that returns that value.
 
 Semantic requirements: the return value of `R::guaranteed_alignment()` must be a power of 2 greater than `alignof(std::max_align_t)` and must never change (equality preservation). Any pointers returned from an `allocate()` call to R must be aligned by (at least) that value.
+
+---
+
+### substitutable_resource_for
+<sub>Defined in header [&lt;memaw/concepts.hpp&gt;](/include/memaw/concepts.hpp)</sub>
+```c++
+template <typename R1, typename R2>
+concept substitutable_resource_for = resource<R1> && resource<R2>
+  && (interchangeable_resource_with<R1, R2>
+      || enable_substitutable_resource_for<R1, R2>);
+```
+The concept of a resource that can safely accept all deallocation calls from a particular instance of another resource.
+
+More formally, given instances `r1` and `r2`, for every valid call `r2.deallocate(ptr, size, alignment)` a call `r1.deallocate(ptr, size, alignment)` is also valid, assuming no calls to `r2.deallocate()` has been made, and all the memory is freed by the time both destructors return.
+Obviously, if R1 and R2 are interchangeable, then this is always true. If they are not then one can specialize the global constant [**enable_substitutable_resource_for**](#enable_substitutable_resource_for) to make a resource substitutable for another (in case the semantic requirement above is met)
+
+> [!NOTE]
+> This is a much weaker concept than [**interchangeable_resource_with**](#interchangeable_resource_with). It is not symmetric and only requires validity when all (and not some) of the deallocation calls from a particular instance of R2 are redirected to a particular instance of R1.
+
+> [!NOTE]
+> If R1 is sweeping, then it must accept mixed adjacent regions from both resources (if possible).
 
 ---
 
@@ -445,6 +489,30 @@ constexpr bool enable_granular_resource = requires {
 };
 ```
 A specializable global constant that enables the [**granular_resource**](#granular_resource) concept (see below) for R. By default, true iff R defines a constexpr member `R::is_granular` implicitly convertible to true.
+
+---
+
+### enable_interchangeable_resources
+<sub>Defined in header [&lt;memaw/concepts.hpp&gt;](/include/memaw/concepts.hpp)</sub>
+```c++
+template <resource R1, resource R2>
+constexpr bool enable_interchangeable_resources = requires {
+  { std::bool_constant<R1::template is_interchangeable_with<R2>>{} }
+    -> std::same_as<std::true_type>;
+```
+A specializable global constant that enables the [**interchangeable_resource_with**](#interchangeable_resource_with) concept (see below) for R1 and R2 and vice versa. By default, true iff R1 defines a template constexpr member `R1::is_interchangeable_with<R2>` implicitly convertible to true.
+
+---
+
+### enable_substitutable_resource_for
+<sub>Defined in header [&lt;memaw/concepts.hpp&gt;](/include/memaw/concepts.hpp)</sub>
+```c++
+template <resource R1, resource R2>
+constexpr bool enable_substitutable_resource_for = requires {
+  { std::bool_constant<R1::template is_substitutable_for<R2>>{} }
+    -> std::same_as<std::true_type>;
+```
+A specializable global constant that enables the [**substitutable_resource_for**](#substitutable_resource_for) concept (see below) for R1 and R2. By default, true iff R1 defines a template constexpr member `R1::is_substitutable_for<R2>` implicitly convertible to true.
 
 ---
 
