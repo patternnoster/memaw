@@ -21,6 +21,7 @@ The library is still work in progress. See below for the list of features implem
 
 | Name | Description |
 |---|---|
+| [**chain_resource**](#chain_resource) | memory resource adaptor that sequentially tries every resource in a given list until a successful allocation |
 | [**os_resource**](#os_resource) | memory resource that always allocates and frees memory via direct system calls to the OS |
 | [**pages_resource**](#pages_resource) | a wrapper around [**os_resource**](#os_resource), allocating memory directly from the OS using pages of the statically specified size |
 
@@ -201,6 +202,49 @@ concept thread_safe_resource = resource<R> && enable_thread_safe_resource<R>;
 The concept of a resource whose methods can safely be called concurrently from different threads.
 
 To mark resource as thread_safe one has to specialize the constant [**enable_thread_safe_resource**](#enable_thread_safe_resource) to true. If then the above condition is not satisfied, the behaviour of the program is undefined.
+
+---
+
+### chain_resource
+<sub>Defined in header [&lt;memaw/chain_resource.hpp&gt;](/include/memaw/chain_resource.hpp)</sub>
+```c++
+template <resource... Rs> requires(sizeof...(Rs) > 0)
+class chain_resource;
+```
+Memory resource adaptor that sequentially tries every resource in a given list until a successful allocation.
+
+The [**deallocate()**](#chain_resourcedeallocate) call to the chain will, by default, be forwarded to the first resource in the list that is [**substitutable_for**](#substitutable_resource_for) all the other resources. The [**dispatch_deallocate()**](#chain_resourcedispatch_deallocate) template (see below) can be specialized to alter that behaviour.
+
+If no such resource and no specialization of the dispatch template exists, the default [**deallocate()**](#chain_resourcedeallocate) method will be unavailable (thus, the chain won't model the [**resource**](#resource) concept) and one should use the [**deallocate_with**](#chain_resourcedeallocate_with) method (that takes an additional index argument) instead.
+
+#### Member functions
+
+| Name | Description |
+|---|---|
+| [**allocate**](#chain_resourceallocate) | calls **allocate()** with the given size and alignment arguments on every resource in the list until the first success |
+| [**chain_resource**](#chain_resourcechain_resource) | constructs the chain with the link resources default or move-constructed |
+| [**deallocate**](#chain_resourcedeallocate) | deallocates memory previously allocated by the chain by forwarding the call to one of the resources in it |
+| [**deallocate_with**](#chain_resourcedeallocate_with) | deallocates memory previously allocated by the chain by forwarding the call to the resource at the given index |
+| [**do_allocate**](#chain_resourcedo_allocate) | same as **allocate()** but returns a pair of the resulting pointer and the index of the resource that performed the allocation |
+| [**guaranteed_alignment**](#chain_resourceguaranteed_alignment) | returns the guaranteed alignment of all the memory addresses allocated by the chain, defined iff all of the resources in the chain are overaligning |
+| [**min_size**](#chain_resourcemin_size) | returns the minimum allocation size, defined iff any of the resources in the chain are bound |
+| **operator==** | the default equality comparison operator (the conjunction of the equalities of links) |
+
+#### Constants
+
+| Name | Description |
+|---|---|
+| **is_granular** | specifies if the chain is granular (i.e., at least one of its resources is granular) |
+| **is_interchangeable_with** | specifies if the chain is interchangeable with the given resource (i.e., all of its resources are interchangeable with it) |
+| **is_thread_safe** | specifies if the chain is **thread_safe** (i.e., all of its resources are **thread_safe**) |
+
+#### Friends and Specializations
+
+| Name | Description |
+|---|---|
+| [**dispatch_deallocate**](#chain_resourcedispatch_deallocate) | Chooses the resource in the chain that will service the [**deallocate()**](#chain_resourcedeallocate) call |
+| **enable_substitutable_resource_for** | specifies if a resource is substitutable for a chain (i.e., if it is substitutable for all of its resources) |
+| **enable_substitutable_resource_for** | enables the **substitutable_resource_for** concept for chains with the constant deallocator if the corresponding resource is substitutable for the given one |
 
 ---
 
