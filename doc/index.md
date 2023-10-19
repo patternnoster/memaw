@@ -246,6 +246,16 @@ If no such resource and no specialization of the dispatch template exists, the d
 | **enable_substitutable_resource_for** | specifies if a resource is substitutable for a chain (i.e., if it is substitutable for all of its resources) |
 | **enable_substitutable_resource_for** | enables the **substitutable_resource_for** concept for chains with the constant deallocator if the corresponding resource is substitutable for the given one |
 
+### chain_resource::allocate
+<sub>Defined in header [&lt;memaw/chain_resource.hpp&gt;](/include/memaw/chain_resource.hpp)</sub>
+```c++
+[[nodiscard]] void* allocate
+  (size_t size, size_t alignment = alignof(std::max_align_t)) noexcept;
+```
+Calls **allocate()** with the given size and alignment arguments on every resource in the list until the first success (i.e., a call that returned a non-null pointer) and returns that result. Returns nullptr if all of the calls have failed.
+
+---
+
 ### chain_resource::chain_resource
 <sub>Defined in header [&lt;memaw/chain_resource.hpp&gt;](/include/memaw/chain_resource.hpp)</sub>
 ```c++
@@ -264,6 +274,46 @@ constexpr chain_resource(Rs&&... resources)
   requires((std::move_constructible<Rs> && ...));
 ```
 Constructs the chain calling the link resources move constructors.
+
+---
+
+### chain_resource::deallocate
+<sub>Defined in header [&lt;memaw/chain_resource.hpp&gt;](/include/memaw/chain_resource.hpp)</sub>
+```c++
+void deallocate(void* ptr, size_t size,
+                size_t alignment = alignof(std::max_align_t))
+  noexcept((__detail::has_constant_dispatcher<chain_resource>
+            && __detail::has_nothrow_deallocate
+                 <__detail::at<__detail::dispatch<chain_resource>, Rs...>>)
+           || (__detail::has_nothrow_dispatcher<chain_resource>
+               && ... && __detail::has_nothrow_deallocate<Rs>))
+  requires(__detail::has_dispatcher<chain_resource>);
+```
+Deallocates memory previously allocated by the chain by forwarding the call to one of the resources in it, using the [**dispatch_deallocate()**](#chain_resourcedispatch_deallocate) (see above) function to get its index, and is only defined if such method is declared for the chain.
+
+---
+
+### chain_resource::deallocate_with
+<sub>Defined in header [&lt;memaw/chain_resource.hpp&gt;](/include/memaw/chain_resource.hpp)</sub>
+```c++
+void deallocate_with(size_t idx, void* ptr, size_t size,
+                     size_t alignment = alignof(std::max_align_t))
+  noexcept((__detail::has_nothrow_deallocate<Rs> && ...));
+```
+Deallocates memory previously allocated by the chain by forwarding the call to the resource at the given index.
+
+---
+
+### chain_resource::do_allocate
+<sub>Defined in header [&lt;memaw/chain_resource.hpp&gt;](/include/memaw/chain_resource.hpp)</sub>
+```c++
+  [[nodiscard]] std::pair<void*, size_t> do_allocate
+    (size_t size, size_t alignment = alignof(std::max_align_t)) noexcept;
+```
+Same as [**allocate**](#chain_resourceallocate) but returns a pair of the resulting pointer and the index of the resource that performed the allocation.
+
+> [!NOTE]
+> If the resulting pointer is null (i.e., if all the resources have been tried and have failed), the index of the last resource is always returned, even if that call threw an exception.
 
 ---
 
