@@ -246,6 +246,68 @@ If no such resource and no specialization of the dispatch template exists, the d
 | **enable_substitutable_resource_for** | specifies if a resource is substitutable for a chain (i.e., if it is substitutable for all of its resources) |
 | **enable_substitutable_resource_for** | enables the **substitutable_resource_for** concept for chains with the constant deallocator if the corresponding resource is substitutable for the given one |
 
+### chain_resource::chain_resource
+<sub>Defined in header [&lt;memaw/chain_resource.hpp&gt;](/include/memaw/chain_resource.hpp)</sub>
+```c++
+constexpr chain_resource()
+  noexcept((std::is_nothrow_default_constructible_v<Rs> && ...))
+  requires((std::default_initializable<Rs> && ...));
+```
+Constructs the chain calling the link resources default constructors.
+
+---
+
+<sub>Defined in header [&lt;memaw/chain_resource.hpp&gt;](/include/memaw/chain_resource.hpp)</sub>
+```c++
+constexpr chain_resource(Rs&&... resources)
+  noexcept((std::is_nothrow_move_constructible_v<Rs> && ...))
+  requires((std::move_constructible<Rs> && ...));
+```
+Constructs the chain calling the link resources move constructors.
+
+---
+
+### chain_resource::guaranteed_alignment
+<sub>Defined in header [&lt;memaw/chain_resource.hpp&gt;](/include/memaw/chain_resource.hpp)</sub>
+```c++
+constexpr static pow2_t guaranteed_alignment() noexcept
+  requires(overaligning_resource<Rs> && ...);
+```
+Returns the guaranteed alignment of all the memory addresses allocated by the chain, defined iff all of the resources in the chain are overaligning (and equals the minimum of all their **guaranteed_alignment()**).
+
+---
+
+### chain_resource::min_size
+<sub>Defined in header [&lt;memaw/chain_resource.hpp&gt;](/include/memaw/chain_resource.hpp)</sub>
+```c++
+constexpr static size_t min_size() noexcept
+  requires(bound_resource<Rs> || ...);
+```
+Returns the minimum allocation size, defined iff any of the resources in the chain are bound.
+
+If defined, equals the smallest number n such that:
+1. for any [**bound_resource**](#bound_resource) R in the chain, `n >= R::min_size()`;
+1. for any [**granular_resource**](#granular_resource) R in the chain, n is also a multiple of `R::min_size()`.
+
+> [!NOTE]
+> If such n is not representable as `size_t`, the behaviour is undefined.
+
+---
+
+### chain_resource::dispatch_deallocate
+<sub>Defined in header [&lt;memaw/chain_resource.hpp&gt;](/include/memaw/chain_resource.hpp)</sub>
+```c++
+template <resource... Us>
+  requires(__detail::resource_list<Us...>::has_universal_deallocator)
+std::integral_constant<size_t, __detail::resource_list<Us...>::universal_deallocator_id>
+  dispatch_deallocate(const chain_resource<Us...>&, void*, size_t, size_t);
+```
+Chooses the resource in the chain that will service the [**deallocate()**](#chain_resourcedeallocate) call.
+
+By default, only declared for chains that have a resource that is [**substitutable_for**](#substitutable_resource_for) all the other resources (in which case returns the index of the first such resource). Can be overloaded, returning any type convertible to `size_t`.
+
+If the index is constant and known at compile-time (as in the default scenario), `std::integral_constant` (or a similar type) should be returned as it allows to deduce some compile-time features (e.g., if the chain models **substitutable_for** or if the deallocation is noexcept in case that's not true for all the resources in the chain), and, additionally, can lead to generating more efficient code on some compilers (e.g., MSVC).
+
 ---
 
 ### os_resource
