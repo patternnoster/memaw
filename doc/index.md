@@ -234,17 +234,18 @@ If no such resource and no specialization of the dispatch template exists, the d
 
 | Name | Description |
 |---|---|
-| **is_granular** | specifies if the chain is granular (i.e., at least one of its resources is granular) |
-| **is_interchangeable_with** | specifies if the chain is interchangeable with the given resource (i.e., all of its resources are interchangeable with it) |
-| **is_thread_safe** | specifies if the chain is **thread_safe** (i.e., all of its resources are **thread_safe**) |
+| **is_granular** | specifies if the chain is [**granular**](#granular_resource) (i.e., at least one of its resources is granular) |
+| **is_interchangeable_with** | specifies if the chain is [**interchangeable**](#interchangeable_resource_with) with the given resource (i.e., all of its resources are interchangeable with it) |
+| **is_thread_safe** | specifies if the chain is [**thread_safe**](#thread_safe_resource) (i.e., all of its resources are thread safe) |
 
 #### Friends and Specializations
 
 | Name | Description |
 |---|---|
 | [**dispatch_deallocate**](#chain_resourcedispatch_deallocate) | Chooses the resource in the chain that will service the [**deallocate()**](#chain_resourcedeallocate) call |
-| **enable_substitutable_resource_for** | specifies if a resource is substitutable for a chain (i.e., if it is substitutable for all of its resources) |
-| **enable_substitutable_resource_for** | enables the **substitutable_resource_for** concept for chains with the constant deallocator if the corresponding resource is substitutable for the given one |
+| **enable_substitutable_resource_for** | specifies if a resource is [**substitutable**](#substitutable_resource_for) for a chain (i.e., if it is substitutable for all of its resources) |
+| **enable_substitutable_resource_for** | enables the [**substitutable_resource_for**](#substitutable_resource_for) concept for chains with the constant deallocator if the corresponding resource is substitutable for the given one |
+| **enable_sweeping_resource** |  enables the [**sweeping_resource**](#sweeping_resource) concept for chains with the constant deallocator if the corresponding resource is sweeping |
 
 ### chain_resource::allocate
 <sub>Defined in header [&lt;memaw/chain_resource.hpp&gt;](/include/memaw/chain_resource.hpp)</sub>
@@ -307,8 +308,8 @@ Deallocates memory previously allocated by the chain by forwarding the call to t
 ### chain_resource::do_allocate
 <sub>Defined in header [&lt;memaw/chain_resource.hpp&gt;](/include/memaw/chain_resource.hpp)</sub>
 ```c++
-  [[nodiscard]] std::pair<void*, size_t> do_allocate
-    (size_t size, size_t alignment = alignof(std::max_align_t)) noexcept;
+[[nodiscard]] std::pair<void*, size_t> do_allocate
+  (size_t size, size_t alignment = alignof(std::max_align_t)) noexcept;
 ```
 Same as [**allocate**](#chain_resourceallocate) but returns a pair of the resulting pointer and the index of the resource that performed the allocation.
 
@@ -563,6 +564,7 @@ A wrapper around [**os_resource**](#os_resource), allocating memory directly fro
 | Name | Description |
 |---|---|
 | **is_granular** | enables [**granular_resource**](#granular_resource) |
+| **is_interchangeable_with** | enables [**interchangeable_resource_with**](#interchangeable_resource_with) the [**os_resource**](#os_resource) and any [**pages_resource**](#pages_resource) |
 | **is_sweeping** | enables [**sweeping_resource**](#sweeping_resource) |
 | **is_thread_safe** | enables [**thread_safe_resource**](#thread_safe_resource) |
 
