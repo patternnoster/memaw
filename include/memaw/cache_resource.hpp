@@ -1,5 +1,7 @@
 #pragma once
 #include <concepts>
+#include <nupp/algorithm.hpp>
+#include <type_traits>
 
 #include "concepts.hpp"
 #include "literals.hpp"
@@ -80,5 +82,70 @@ concept cache_resource_config = requires {
   { cache_resource_config_t<typename C::upstream_resource>{} }
     -> std::same_as<C>;
 };
+
+/**
+ * @brief Memory resource that allocates big blocks from an upstream
+ *        resource and uses those blocks for (smaller) allocation
+ *        requests. Memory is not freed until the resource is
+ *        destructed (as in std::pmr::monotonic_buffer_resource)
+ **/
+template <cache_resource_config auto _cfg>
+class cache_resource {
+public:
+  static_assert(_cfg.min_block_size >= _cfg.granularity);
+  static_assert(_cfg.max_block_size >= _cfg.min_block_size);
+  static_assert(_cfg.max_block_size == _cfg.min_block_size
+                || _cfg.block_size_multiplier > 1);
+
+  using upstream_t = typename decltype(_cfg)::upstream_resource;
+
+  constexpr static auto config = _cfg;
+
+  /**
+   * @brief Returns the (configured) size of a minimum allocation: any
+   *        allocation can only request a size that is a multiple of
+   *        this value
+   **/
+  constexpr static pow2_t min_size() noexcept {
+    return _cfg.granularity;
+  }
+
+  /**
+   * @brief Returns the minimal alignment of any address allocated by
+   *        the cache if its configuration and the upstream resource's
+   *        guaranteed_alignment() allow for it
+   **/
+  constexpr static pow2_t guaranteed_alignment() noexcept
+    requires(overaligning_resource<upstream_t>) {
+    return nupp::minimum(_cfg.granularity, upstream_t::guaranteed_alignment());
+  }
+
+  constexpr cache_resource()
+    noexcept(std::is_nothrow_default_constructible_v<upstream_t>)
+    requires(std::default_initializable<upstream_t>) {}
+
+  constexpr cache_resource(upstream_t&&)
+    noexcept(std::is_nothrow_move_constructible_v<upstream_t>) {}
+
+  cache_resource(const cache_resource&) = delete;
+  cache_resource& operator=(const cache_resource&) = delete;
+
+  constexpr cache_resource(cache_resource&& rhs)
+    noexcept(std::is_nothrow_move_constructible_v<upstream_t>) = default;
+
+  constexpr cache_resource& operator=(cache_resource&& rhs)
+    noexcept(std::is_nothrow_move_assignable_v<upstream_t>)
+    requires(std::is_move_assignable_v<upstream_t>) = default;
+
+  [[nodiscard]] void* allocate
+    (size_t, size_t = alignof(std::max_align_t)) noexcept;
+
+  void deallocate(void*, size_t, size_t = alignof(std::max_align_t)) noexcept;
+
+  bool operator==(const cache_resource&) const noexcept = default;
+};
+
+template <sweeping_resource R>
+cache_resource(R&&) -> cache_resource<cache_resource_config_t<R>{}>;
 
 } // namespace memaw
