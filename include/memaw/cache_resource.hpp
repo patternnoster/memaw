@@ -6,6 +6,8 @@
 #include "concepts.hpp"
 #include "literals.hpp"
 
+#include "__detail/cache_resource_impl.hpp"
+
 /**
  * @file
  * A resource adaptor that allocates big blocks of memory from the
@@ -124,8 +126,9 @@ public:
     noexcept(std::is_nothrow_default_constructible_v<upstream_t>)
     requires(std::default_initializable<upstream_t>) {}
 
-  constexpr cache_resource(upstream_t&&)
-    noexcept(std::is_nothrow_move_constructible_v<upstream_t>) {}
+  constexpr cache_resource(upstream_t&& upstream)
+    noexcept(std::is_nothrow_move_constructible_v<upstream_t>):
+    impl_(std::move(upstream)) {}
 
   cache_resource(const cache_resource&) = delete;
   cache_resource& operator=(const cache_resource&) = delete;
@@ -137,12 +140,29 @@ public:
     noexcept(std::is_nothrow_move_assignable_v<upstream_t>)
     requires(std::is_move_assignable_v<upstream_t>) = default;
 
+  /**
+   * @brief Allocates memory from the cache, calling the upstream
+   *        allocate() if there is not enough left
+   **/
   [[nodiscard]] void* allocate
-    (size_t, size_t = alignof(std::max_align_t)) noexcept;
+    (const size_t size,
+     const size_t alignment = alignof(std::max_align_t)) noexcept {
+    return impl_.allocate(size, pow2_t{alignment, pow2_t::ceil});
+  }
 
-  void deallocate(void*, size_t, size_t = alignof(std::max_align_t)) noexcept;
+  /**
+   * @brief Deallocates previously allocated memory. The deallocate()
+   *        call on the upstream resource happens only on destruction
+   **/
+  void deallocate(void* const ptr, const size_t size,
+                  const size_t alignment = alignof(std::max_align_t)) noexcept {
+    impl_.deallocate(ptr, size, pow2_t{alignment, pow2_t::exact});
+  }
 
   bool operator==(const cache_resource&) const noexcept = default;
+
+private:
+  __detail::cache_resource_impl<_cfg> impl_;
 };
 
 template <sweeping_resource R>
