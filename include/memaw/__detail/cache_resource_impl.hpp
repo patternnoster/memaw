@@ -18,6 +18,8 @@ class cache_resource_impl {
 public:
   using upstream_t = typename decltype(_cfg)::upstream_resource;
 
+  constexpr static auto min_granularity = pow2_t{ alignof(std::max_align_t) };
+
   constexpr cache_resource_impl()
     noexcept(std::is_nothrow_default_constructible_v<upstream_t>) = default;
 

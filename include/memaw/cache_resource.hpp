@@ -33,7 +33,9 @@ struct cache_resource_config_t {
 
   /**
    * @brief The allocation granularity for this adaptor. The size of
-   *        every allocation must be a multiple of this value
+   *        every allocation must be a multiple of this value. Must
+   *        not be smaller than cache_resource::min_granularity (see
+   *        below)
    * @note  If R is an overaligning_resource, the cache will model
    *        overaligning_resource as well with the guaranteed
    *        alignment value equal to the minimum of that of R and this
@@ -94,6 +96,14 @@ concept cache_resource_config = requires {
 template <cache_resource_config auto _cfg>
 class cache_resource {
 public:
+  /**
+   * @brief The minimum value for the granularity parameter. Normally
+   *        equals 32 bytes. Always >= alignof(std::max_align_t).
+   **/
+  constexpr static pow2_t min_granularity =
+    __detail::cache_resource_impl<_cfg>::min_granularity;
+
+  static_assert(_cfg.granularity >= min_granularity);
   static_assert(_cfg.min_block_size >= _cfg.granularity);
   static_assert(_cfg.max_block_size >= _cfg.min_block_size);
   static_assert(_cfg.max_block_size == _cfg.min_block_size
@@ -102,6 +112,14 @@ public:
   using upstream_t = typename decltype(_cfg)::upstream_resource;
 
   constexpr static auto config = _cfg;
+
+  constexpr static bool is_granular = true;
+  constexpr static bool is_sweeping = true;
+  constexpr static bool is_thread_safe = thread_safe_resource<upstream_t>;
+
+  template <resource R>
+  constexpr static bool is_substitutable_for =
+    substitutable_resource_for<upstream_t, R>;
 
   /**
    * @brief Returns the (configured) size of a minimum allocation: any
