@@ -1,11 +1,14 @@
 #include <cstdint>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <memory>
 #include <new>
 #include <nupp/pow2_t.hpp>
+#include <set>
 #include <utility>
 #include <vector>
 
+#include "memaw/cache_resource.hpp"
 #include "memaw/chain_resource.hpp"
 #include "memaw/literals.hpp"
 #include "memaw/os_resource.hpp"
@@ -347,3 +350,63 @@ TEST(ChainResourceTests, deallocation) {
   expect_calls(1, 0, 0);
   chain1.deallocate_with(0, nullptr, 0);
 }
+
+using upstream1_t =
+  test_resource<resource_params{ .is_sweeping = true }>;
+
+using upstream2_t =
+  test_resource<resource_params{ .min_size = 4_KiB, .alignment = 8_KiB,
+                                 .is_sweeping = true}>;
+
+using upstream3_t =
+  test_resource<resource_params{ .min_size = 1000, .alignment = 32,
+                                 .is_granular = true, .is_sweeping = true}>;
+
+template <resource U>
+using cache1_t = cache_resource<cache_resource_config_t<U>{
+  .granularity = pow2_t{1_KiB},
+  .min_block_size = 1_MiB,
+  .max_block_size = 4_MiB,
+  .block_size_multiplier = 2.42
+}>;
+
+template <resource U>
+using cache2_t = cache_resource<cache_resource_config_t<U>{
+  .granularity = pow2_t{32},
+  .min_block_size = 1500,
+  .max_block_size = 100000,
+  .block_size_multiplier = 3
+}>;
+
+using res1_t = cache1_t<upstream1_t>;
+using res2_t = cache1_t<upstream2_t>;
+using res3_t = cache1_t<upstream3_t>;
+using res4_t = cache2_t<upstream1_t>;
+using res5_t = cache2_t<upstream2_t>;
+using res6_t = cache2_t<upstream3_t>;
+
+template <typename T>
+class CacheResourceTests: public testing::Test {
+protected:
+  void SetUp() {
+    test_cache = std::make_shared<T>(mock);
+  }
+
+  mock_resource mock;
+  std::shared_ptr<T> test_cache;
+
+  struct allocation {
+    void* ptr;
+    size_t size;
+    size_t alignment;
+
+    bool operator<(const allocation& rhs) const noexcept {
+      return ptr < rhs.ptr;
+    }
+  };
+  std::set<allocation> allocations;
+};
+
+using CacheResources =
+  testing::Types<res1_t, res2_t, res3_t, res4_t, res5_t, res6_t>;
+TYPED_TEST_SUITE(CacheResourceTests, CacheResources);
