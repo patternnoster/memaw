@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <new>
-#include <nupp/pow2_t.hpp>
+#include <nupp/algorithm.hpp>
 #include <set>
 #include <utility>
 #include <vector>
@@ -17,6 +17,7 @@
 #include "test_resource.hpp"
 
 using namespace memaw;
+using std::byte;
 
 MATCHER_P(IsAlignedBy, log2, "") {
   return (uintptr_t(arg) & ((uintptr_t(1) << log2) - 1)) == 0;
@@ -388,12 +389,73 @@ using res6_t = cache2_t<upstream3_t>;
 template <typename T>
 class CacheResourceTests: public testing::Test {
 protected:
+  using upstream_t = T::upstream_t;
+
+  constexpr static void* align_by(void* const ptr,
+                                  const size_t alignment) noexcept {
+    return reinterpret_cast<void*>((uintptr_t(ptr) + (alignment - 1))
+                                   & ~(alignment - 1));
+  }
+
+  constexpr static size_t get_block_size(const size_t num) noexcept {
+    size_t bs_lim = T::config.min_block_size;
+    for (size_t i = 0; i < num; ++i)  // NB: not the same as std::pow
+      bs_lim = size_t(bs_lim * T::config.block_size_multiplier);
+
+    bs_lim = nupp::minimum(bs_lim, T::config.max_block_size);
+
+    if constexpr (granular_resource<upstream_t>) {
+      // Add some for the result to be a multiple
+      const auto rem = bs_lim % upstream_t::min_size();
+      if (!rem) return bs_lim;
+      return bs_lim + (upstream_t::min_size() - rem);
+    }
+    else if constexpr (bound_resource<upstream_t>)
+      return nupp::maximum(bs_lim, upstream_t::min_size());
+    else
+      return bs_lim;
+  }
+
+  void mock_upstream_alloc(const size_t count) noexcept {
+    // We may need to allocate real memory because it may be used in
+    // the deallocator of the cache
+    size_t total_block_sizes = 0;
+    for (size_t i = 0; i < count; ++i)
+      total_block_sizes+= get_block_size(i);
+
+    // Now make the upstream allocation function
+    constexpr size_t block_alignment =
+      nupp::maximum(T::config.granularity.value, upstream_t::params.alignment);
+
+    const size_t req_mem = total_block_sizes + block_alignment * count;
+    memory = std::make_unique_for_overwrite<byte[]>(req_mem);
+
+    next_ptr = memory.get();
+    EXPECT_CALL(mock, allocate(_, _)).Times(int(count))
+      .WillRepeatedly([this]
+                      (const size_t size, const size_t alignment) {
+        EXPECT_EQ(size, get_block_size(allocations.size()));
+        EXPECT_TRUE(nupp::is_pow2(alignment));
+
+        const auto result =
+          align_by(next_ptr, nupp::maximum(alignment,
+                                           upstream_t::params.alignment));
+        next_ptr = (byte*)result + size;
+
+        allocations.emplace(result, size, alignment);
+        return reinterpret_cast<void*>(result);
+      });
+  }
+
   void SetUp() {
     test_cache = std::make_shared<T>(mock);
   }
 
   mock_resource mock;
   std::shared_ptr<T> test_cache;
+
+  std::unique_ptr<byte[]> memory;
+  byte* next_ptr;
 
   struct allocation {
     void* ptr;
