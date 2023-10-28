@@ -538,3 +538,75 @@ TYPED_TEST(CacheResourceTests, allocation_base) {
 
   this->deallocate_all();
 }
+
+TYPED_TEST(CacheResourceTests, allocation_corner) {
+  constexpr size_t blocks_count = 4;
+
+  // First pre-allocate some blocks
+  this->mock_upstream_alloc(blocks_count);
+
+  size_t last_alloc;
+  while (this->allocations.size() < blocks_count) {
+    last_alloc = this->get_rand_alloc_size();
+    const auto ptr = this->test_cache->allocate(last_alloc);
+    ASSERT_NE(ptr, nullptr);
+    this->test_cache->deallocate(ptr, last_alloc);
+  }
+
+  // How much we can still allocate from the current block
+  auto drain_size = this->get_block_size(blocks_count - 1);
+  drain_size-= (drain_size % TypeParam::config.granularity) + last_alloc;
+
+  // Now do a direct allocation
+  size_t bigger_than_max = this->get_block_size(blocks_count)
+    + TypeParam::config.granularity;
+  bigger_than_max-= bigger_than_max % TypeParam::config.granularity;
+
+  EXPECT_CALL(this->mock, allocate(_, _)).Times(1)
+    .WillRepeatedly([bigger_than_max](const size_t size, const size_t) {
+      EXPECT_GE(size, bigger_than_max);
+      return nullptr;
+    });
+  EXPECT_EQ((this->test_cache->allocate(bigger_than_max)), nullptr);
+
+  // Make sure it didn't mess things up
+  const auto reg_ptr =
+    this->test_cache->allocate(TypeParam::config.granularity.value);
+  EXPECT_NE(reg_ptr, nullptr);
+  this->test_cache->deallocate(reg_ptr, TypeParam::config.granularity.value);
+  drain_size-= TypeParam::config.granularity.value;
+
+  // Now too big of alignment
+  auto big_alignment = TypeParam::config.granularity.value * 2;
+  while (!((uintptr_t(reg_ptr) + TypeParam::config.granularity.value)
+           & (big_alignment - 1)))
+    big_alignment*= 2;
+
+  const size_t reverse_calls_count = 1 +
+    nupp::minimum(blocks_count,
+                  size_t(std::ceil(double(this->get_block_size(blocks_count))
+                                   / this->get_block_size(0)
+                                   / TypeParam::config.block_size_multiplier)));
+
+  EXPECT_CALL(this->mock, allocate(_, _)).Times(int(reverse_calls_count))
+    .WillRepeatedly([big_alignment](const size_t, const size_t alignment) {
+      EXPECT_EQ(alignment, big_alignment);
+      return nullptr;
+    });
+  EXPECT_EQ((this->test_cache->allocate(TypeParam::config.granularity.value,
+                                        big_alignment)), nullptr);
+
+  // Now drain and reverse
+  const auto ptr = this->test_cache->allocate(drain_size);
+  EXPECT_NE(ptr, nullptr);
+  this->test_cache->deallocate(ptr, drain_size);
+
+  EXPECT_CALL(this->mock, allocate(_, _)).Times(int(reverse_calls_count))
+    .WillRepeatedly([](const size_t, const size_t) {
+      return nullptr;
+    });
+  EXPECT_EQ(this->test_cache->allocate(TypeParam::config.granularity.value),
+            nullptr);
+
+  this->deallocate_all();
+}
