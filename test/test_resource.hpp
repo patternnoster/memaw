@@ -27,6 +27,8 @@ struct resource_params {
 
 template <resource_params _params = resource_params{}, size_t _idx = 0>
 struct test_resource {
+  constexpr static auto params = _params;
+
   constexpr static bool is_granular = _params.is_granular;
   constexpr static bool is_sweeping = _params.is_sweeping;
   constexpr static bool is_thread_safe = _params.is_thread_safe;

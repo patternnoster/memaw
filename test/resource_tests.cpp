@@ -352,6 +352,8 @@ TEST(ChainResourceTests, deallocation) {
   chain1.deallocate_with(0, nullptr, 0);
 }
 
+using testing::AtMost;
+
 using upstream1_t =
   test_resource<resource_params{ .is_sweeping = true }>;
 
@@ -391,6 +393,9 @@ class CacheResourceTests: public testing::Test {
 protected:
   using upstream_t = T::upstream_t;
 
+  constexpr static size_t block_alignment =
+    nupp::maximum(T::config.granularity.value, upstream_t::params.alignment);
+
   constexpr static void* align_by(void* const ptr,
                                   const size_t alignment) noexcept {
     return reinterpret_cast<void*>((uintptr_t(ptr) + (alignment - 1))
@@ -416,6 +421,15 @@ protected:
       return bs_lim;
   }
 
+  constexpr static size_t get_rand_alloc_size() noexcept {
+    size_t result = 0;
+    while (!result) {
+      result = rand() % T::config.min_block_size;
+      result-= result % T::config.granularity;
+    }
+    return result;
+  }
+
   void mock_upstream_alloc(const size_t count) noexcept {
     // We may need to allocate real memory because it may be used in
     // the deallocator of the cache
@@ -424,9 +438,6 @@ protected:
       total_block_sizes+= get_block_size(i);
 
     // Now make the upstream allocation function
-    constexpr size_t block_alignment =
-      nupp::maximum(T::config.granularity.value, upstream_t::params.alignment);
-
     const size_t req_mem = total_block_sizes + block_alignment * count;
     memory = std::make_unique_for_overwrite<byte[]>(req_mem);
 
@@ -445,6 +456,11 @@ protected:
         allocations.emplace(result, size, alignment);
         return reinterpret_cast<void*>(result);
       });
+  }
+
+  void deallocate_all() noexcept {
+    EXPECT_CALL(mock, deallocate(_, _, _))
+      .Times(AtMost(int(allocations.size())));
   }
 
   void SetUp() {
@@ -472,3 +488,53 @@ protected:
 using CacheResources =
   testing::Types<res1_t, res2_t, res3_t, res4_t, res5_t, res6_t>;
 TYPED_TEST_SUITE(CacheResourceTests, CacheResources);
+
+TYPED_TEST(CacheResourceTests, allocation_base) {
+  using upstream = TypeParam::upstream_t;
+  using test_t = CacheResourceTests<TypeParam>;
+
+  constexpr size_t blocks_count = 8;
+
+  if constexpr (overaligning_resource<upstream>) {
+    EXPECT_EQ(this->test_cache->guaranteed_alignment(),
+              (nupp::minimum(TypeParam::config.granularity.value,
+                             upstream::params.alignment)));
+  }
+
+  this->mock_upstream_alloc(blocks_count);
+
+  const auto init_ptr = this->align_by(this->memory.get(),
+                                       test_t::block_alignment);
+  auto next_ptr = (byte*)init_ptr;
+
+  size_t allocated = 0;
+  size_t curr_block = 0;
+  while (curr_block < (blocks_count - 1)) {
+    if (rand() % 3 == 0) {
+      // Throw in a bad allocation just to check
+      EXPECT_EQ((this->test_cache->allocate(TypeParam::config.granularity + 1)),
+                nullptr);
+      continue;
+    }
+
+    const size_t to_alloc = this->get_rand_alloc_size();
+    const auto alloc_result = this->test_cache->allocate(to_alloc);
+
+    if ((allocated + to_alloc) > this->get_block_size(curr_block)) {
+      const auto diff = this->get_block_size(curr_block) - allocated;
+      next_ptr = (byte*)this->align_by(next_ptr + diff,
+                                       test_t::block_alignment);
+      ++curr_block;
+      allocated = to_alloc;
+    }
+    else
+      allocated+= to_alloc;
+
+    EXPECT_EQ(alloc_result, next_ptr);
+    next_ptr = (byte*)next_ptr + to_alloc;
+
+    this->test_cache->deallocate(alloc_result, to_alloc);
+  }
+
+  this->deallocate_all();
+}
