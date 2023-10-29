@@ -425,10 +425,11 @@ protected:
       return bs_lim;
   }
 
-  constexpr static size_t get_rand_alloc_size() noexcept {
+  constexpr static size_t get_rand_alloc_size
+    (const size_t max = T::config.min_block_size) noexcept {
     size_t result = 0;
     while (!result) {
-      result = rand() % T::config.min_block_size;
+      result = rand() % max;
       result-= result % T::config.granularity;
     }
     return result;
@@ -687,6 +688,9 @@ TYPED_TEST(CacheResourceTests, randomized_multithread) {
   EXPECT_CALL(this->mock, allocate(_, _))
     .WillRepeatedly([this, &last_block, &blocks, &block_ptrs]
                     (const size_t size, const size_t alignment) -> void* {
+      if (rand() % 3 == 0) // Make things more spicy
+        return nullptr;
+
       const auto id = last_block.fetch_add(1, std::memory_order_relaxed);
       block_ptrs[id] = std::make_unique<byte[]>(size + alignment);
       blocks[id] = { this->align_by(block_ptrs[id].get(), alignment),
@@ -701,9 +705,44 @@ TYPED_TEST(CacheResourceTests, randomized_multithread) {
   threads.reserve(threads_count);
 
   for (size_t i = 0; i < threads_count; ++i)
-    threads.emplace_back([&latch]() {
+    threads.emplace_back([this, &latch, &allocs](const size_t id) {
       latch.arrive_and_wait();  // All threads start at the same time
-    });
+      std::vector<allocation> local_allocs;
+
+      size_t allocs_num = 0;
+      bool had_overaligned = false;
+      while (allocs_num < allocs_per_thread || !local_allocs.empty()) {
+        if (allocs_num < allocs_per_thread && (rand() % 2)) {
+          // Allocate
+          const size_t to_alloc = this->get_rand_alloc_size(4_KiB);
+          const size_t alignment = size_t(1)
+            << (rand() % ((had_overaligned ? 1 : 2)
+                          * TypeParam::config.granularity.log2()));
+
+          if (alignment > TypeParam::config.granularity)
+            had_overaligned = true;
+
+          const auto result = this->test_cache->allocate(to_alloc, alignment);
+          if (result) {
+            EXPECT_EQ(result, (this->align_by(result, alignment)));
+            local_allocs.emplace_back(result, to_alloc, alignment);
+            ++allocs_num;
+          }
+        }
+        else {
+          // Deallocate
+          if (local_allocs.empty()) continue;
+
+          const auto it = local_allocs.begin() + (rand() % local_allocs.size());
+          this->test_cache->deallocate(it->ptr, it->size, it->alignment);
+
+          // Remember in the global, remove from local
+          allocs[id].push_back(*it);
+          std::swap(*it, local_allocs.back());
+          local_allocs.pop_back();
+        }
+      }
+    }, i);
 
   // Wait for threads to complete
   for (auto& t : threads) t.join();
