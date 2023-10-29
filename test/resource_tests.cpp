@@ -1,10 +1,14 @@
+#include <array>
+#include <atomic>
 #include <cstdint>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <latch>
 #include <memory>
 #include <new>
 #include <nupp/algorithm.hpp>
 #include <set>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -663,6 +667,76 @@ TYPED_TEST(CacheResourceTests, deallocation) {
     this->test_cache->deallocate(it->ptr, it->size, it->alignment);
     std::swap(*it, allocs.back());
     allocs.pop_back();
+  }
+
+  this->deallocate_all();
+}
+
+TYPED_TEST(CacheResourceTests, randomized_multithread) {
+  using allocation = CacheResourceTests<TypeParam>::allocation;
+
+  constexpr size_t threads_count = 8;
+  constexpr static size_t allocs_per_thread = 10000;
+
+  constexpr size_t count = threads_count * allocs_per_thread;
+
+  auto blocks = std::make_unique<allocation[]>(count);
+  auto block_ptrs = std::make_unique<std::unique_ptr<byte[]>[]>(count);
+  std::atomic<size_t> last_block = 0;
+
+  EXPECT_CALL(this->mock, allocate(_, _))
+    .WillRepeatedly([this, &last_block, &blocks, &block_ptrs]
+                    (const size_t size, const size_t alignment) -> void* {
+      const auto id = last_block.fetch_add(1, std::memory_order_relaxed);
+      block_ptrs[id] = std::make_unique<byte[]>(size + alignment);
+      blocks[id] = { this->align_by(block_ptrs[id].get(), alignment),
+                     size, alignment };
+      return blocks[id].ptr;
+    });
+
+  std::latch latch(threads_count);
+  std::array<std::vector<allocation>, threads_count> allocs;
+
+  std::vector<std::thread> threads;
+  threads.reserve(threads_count);
+
+  for (size_t i = 0; i < threads_count; ++i)
+    threads.emplace_back([&latch]() {
+      latch.arrive_and_wait();  // All threads start at the same time
+    });
+
+  // Wait for threads to complete
+  for (auto& t : threads) t.join();
+
+  // We will now sort all the allocations and make sure they don't
+  // intersect and were actually allocated from the block
+  std::set<allocation> cache_allocs;
+  for (const auto& vec : allocs)
+    for (const auto& alloc : vec)
+      cache_allocs.insert(alloc);
+
+  ASSERT_EQ(cache_allocs.size(), count);
+
+  auto it = cache_allocs.begin();
+  for (auto next_it = std::next(it); next_it != cache_allocs.end();
+       ++it, ++next_it) { // No intersection
+    EXPECT_GE(uintptr_t(next_it->ptr), (uintptr_t(it->ptr) + it->size));
+  }
+
+  // Copy block allocations safely now and deallocate
+  this->allocations = {blocks.get(), blocks.get() + last_block.load()};
+
+  for (const auto& alloc : cache_allocs) {
+    // Out of some block
+    bool found_block = false;
+    for (const auto& b : this->allocations) {
+      if (b.ptr <= alloc.ptr
+          && ((byte*)b.ptr + b.size) >= ((byte*)alloc.ptr + alloc.size)) {
+        found_block = true;
+        break;
+      }
+    }
+    EXPECT_TRUE(found_block);
   }
 
   this->deallocate_all();
