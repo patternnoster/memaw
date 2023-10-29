@@ -4,3 +4,6 @@
 [submodule "extern/nupp"]
 	path = extern/nupp
 	url = https://github.com/patternnoster/nupp.git
+[submodule "extern/atomic128"]
+	path = extern/atomic128
+	url = https://github.com/patternnoster/atomic128

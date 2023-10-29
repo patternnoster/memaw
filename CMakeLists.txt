@@ -12,7 +12,7 @@ target_compile_features(memaw INTERFACE cxx_std_20)
 target_include_directories(memaw INTERFACE
   $<BUILD_INTERFACE:${INCLUDE_DIR}>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-target_link_libraries(memaw INTERFACE nupp)
+target_link_libraries(memaw INTERFACE nupp atomic128)
 
 add_subdirectory(extern)
 

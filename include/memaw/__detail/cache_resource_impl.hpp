@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic128/atomic128_ref.hpp>
 #include <type_traits>
 
 #include "base.hpp"
@@ -12,6 +13,8 @@
  **/
 
 namespace memaw::__detail {
+
+using namespace atomic128;
 
 template <auto _cfg>
 class cache_resource_impl {

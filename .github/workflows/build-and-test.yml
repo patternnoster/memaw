@@ -12,12 +12,16 @@ jobs:
             compiler: msvc-latest
           - os: windows-latest
             compiler: gcc-13
-        include:
-          - os: macos-latest
+        #Temporary disable (-mcx16 problem)
+          - os: windows-latest
             compiler: clang-16
-          - os: ubuntu-latest
-            compiler: clang-16
-            stdlib: libc++
+        #Let's wait until libc++ implements std::atomic_ref
+        #include:
+        #  - os: macos-latest
+        #    compiler: clang-16
+        #  - os: ubuntu-latest
+        #    compiler: clang-16
+        #    stdlib: libc++
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
@@ -37,7 +41,7 @@ jobs:
           CC: ${{ matrix.os == 'macos-latest' && 'clang' || matrix.compiler }}
           CXX: ${{ matrix.compiler == 'gcc-13' && 'g++-13' || matrix.os == 'macos-latest' && 'clang++' || 'clang++-16' }}
           toolset: ${{ matrix.os == 'windows-latest' && matrix.compiler == 'clang-16' && 'ClangCL' || null }}
-        run: cmake . -Bbuild -DMEMAW_BUILD_TESTS=ON ${{ env.toolset && format('-T {0}', env.toolset) }} ${{ matrix.stdlib && format('-DCMAKE_CXX_FLAGS=-stdlib={0}', matrix.stdlib) }}
+        run: cmake . -Bbuild -DMEMAW_BUILD_TESTS=ON ${{ env.toolset && format('-T {0}', env.toolset) }} ${{ env.compiler != 'msvc-latest' && '-DCMAKE_CXX_FLAGS=-mcx16' }} #${{ matrix.stdlib && format('-DCMAKE_CXX_FLAGS=-stdlib={0}', matrix.stdlib) }}
       - name: build
         run: cmake --build build
       - name: test
