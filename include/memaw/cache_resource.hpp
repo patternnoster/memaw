@@ -36,6 +36,8 @@ struct cache_resource_config_t {
    *        every allocation must be a multiple of this value. Must
    *        not be smaller than cache_resource::min_granularity (see
    *        below)
+   * @note  This value also determines the alignment parameter passed
+   *        to the upstream allocate() call
    * @note  If R is an overaligning_resource, the cache will model
    *        overaligning_resource as well with the guaranteed
    *        alignment value equal to the minimum of that of R and this

@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic128/atomic128_ref.hpp>
 #include <type_traits>
+#include <utility>
 
 #include "base.hpp"
 
@@ -47,11 +48,9 @@ public:
     }
   }
 
-  [[nodiscard]] void* allocate(size_t, pow2_t) noexcept {
-    return nullptr;
-  }
+  [[nodiscard]] inline void* allocate(size_t, pow2_t) noexcept;
 
-  void deallocate(void*, size_t, pow2_t) noexcept {}
+  void deallocate(void*, size_t, pow2_t = {}) noexcept {}
 
   bool operator==(const cache_resource_impl& rhs) const noexcept {
     // While inside constructors & assignment operator we can ignore
@@ -60,6 +59,10 @@ public:
   }
 
 private:
+  [[nodiscard]] auto upstream_allocate(size_t, pow2_t) noexcept {
+    return std::make_pair<void*, size_t>(nullptr, 0);
+  }
+
   void copy_internals(const cache_resource_impl& rhs) noexcept {
     head_ = rhs.head_;
     free_chunks_head_ = rhs.free_chunks_head_;
@@ -96,5 +99,71 @@ public:
 
   static_assert(_cfg.granularity >= min_granularity);
 };
+
+template <auto _cfg>
+void* cache_resource_impl<_cfg>::allocate(const size_t size,
+                                          const pow2_t alignment) noexcept {
+  // First make sure the size if a multiple of granularity (it is a
+  // pow2_t, so the check is easy)
+  if (size % _cfg.granularity) [[unlikely]] return nullptr;
+
+  /* Okay, now load the head. We will use two relaxed atomic reads
+   * here, realizing we can end up loading values from different
+   * blocks (in which case the first CAS will fix that) */
+  auto curr_head = head_block_t {
+    .ptr = std::atomic_ref(head_.ptr).load(mo_t::relaxed),
+    .size = std::atomic_ref(head_.size).load(mo_t::relaxed)
+  };
+
+  for (;;) {
+    if (curr_head.size < size || curr_head.ptr % alignment)
+      break;  // We will need a direct allocation
+
+    const head_block_t new_head = {
+      .ptr = curr_head.ptr + size,
+      .size = curr_head.size - size
+    };
+
+    if (atomic128_ref(head_)
+        .compare_exchange_weak(curr_head, new_head,
+                               mo_t::acquire, mo_t::relaxed))
+      // The easy and likely way out
+      return reinterpret_cast<void*>(curr_head.ptr);
+  }
+
+  // If got here, we'll need to allocate from the upstream
+  const auto [result, allocation_size] = upstream_allocate(size, alignment);
+  if (!result) return nullptr;  // Couldn't allocate
+
+  // Try to install a new head if it has more free size left than the
+  // current one
+
+  const head_block_t next_head = {
+    .ptr = uintptr_t(result) + size,
+    .size = allocation_size - size
+  };
+
+  for (;;) {
+    if (curr_head.size >= next_head.size) {
+      // The head has more free space: mark the remaining allocated
+      // block free
+      if (next_head.size)
+        deallocate(reinterpret_cast<void*>(next_head.ptr), next_head.size);
+      return result;
+    }
+
+    // The allocated block has more free space: try to exchange
+    if (atomic128_ref(head_)
+        .compare_exchange_weak(curr_head, next_head,
+                               mo_t::release, mo_t::relaxed)) {
+      // If successful, marks free what's remaining of the old head
+      // (if anything)
+      if (curr_head.size)
+        deallocate(reinterpret_cast<void*>(curr_head.ptr), curr_head.size);
+
+      return result;
+    }
+  }
+}
 
 } // namespace memaw::__detail
