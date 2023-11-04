@@ -151,7 +151,52 @@ public:
 template <auto _cfg>
 std::pair<void*, size_t> cache_resource_impl<_cfg>::upstream_allocate
   (const size_t size, const pow2_t alignment) noexcept {
-  return {};
+  // If got here, we'll need to allocate from the upstream. First
+  // determine the size we request
+  size_t next_size = get_next_block_size();
+  size_t next_allocation = ceil_allocation_size(next_size);
+
+  void* result;
+  size_t allocation_size =
+    next_allocation >= size ? next_allocation : ceil_allocation_size(size);
+
+  for (;;) {
+    const std::atomic_ref lbs_ref{last_block_size_};
+
+    result = try_allocate(upstream_, allocation_size,
+                          nupp::maximum(alignment, _cfg.granularity));
+
+    if (result) {
+      /* Update the next block since we allocated and it succeeded (we
+       * won't bother with CAS here, this value is more of a
+       * recommendation anyway) */
+      lbs_ref.store(next_size, mo_t::relaxed);
+      return std::make_pair(result, allocation_size);
+    }
+    else if (allocation_size > next_allocation)
+      // Do not update the lbs if the allocation was overly big
+      return {};
+
+    /* On failure, we can try to reduce the block size to a previous
+     * value (unless it's smaller than the requested size) until it
+     * reaches the allowed minimum */
+    if (next_size == _cfg.min_block_size) {
+      // Only update if the regular alignment was requested, otherwise
+      // the failure may be due to it alone
+      if (alignment <= _cfg.granularity)
+        lbs_ref.store(0, mo_t::relaxed);  // Start from the beginning
+                                          // next time
+      return {};
+    }
+
+    next_size = get_prev_block_size(next_size);
+    allocation_size = next_allocation = ceil_allocation_size(next_size);
+    if (allocation_size < size) {  // Can't reduce that much
+      if (alignment <= _cfg.granularity)
+        lbs_ref.store(next_size, mo_t::relaxed);
+      return {};
+    }
+  }
 }
 
 template <auto _cfg>
