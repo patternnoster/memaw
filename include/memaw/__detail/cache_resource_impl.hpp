@@ -1,9 +1,11 @@
 #pragma once
 #include <atomic128/atomic128_ref.hpp>
+#include <cmath>
 #include <type_traits>
 #include <utility>
 
 #include "base.hpp"
+#include "concepts_impl.hpp"
 
 /**
  * @file
@@ -59,8 +61,54 @@ public:
   }
 
 private:
-  [[nodiscard]] auto upstream_allocate(size_t, pow2_t) noexcept {
-    return std::make_pair<void*, size_t>(nullptr, 0);
+  inline std::pair<void*, size_t> upstream_allocate(size_t, pow2_t) noexcept;
+
+  /**
+   * @brief Returns the next block size acquired from configuration
+   *        alone (the upstream bounds/granularity not taken into
+   *        account)
+   **/
+  size_t get_next_block_size() const noexcept {
+    if constexpr (_cfg.min_block_size == _cfg.max_block_size)
+      return _cfg.max_block_size;
+    else {
+      const size_t value =
+        std::atomic_ref(last_block_size_).load(mo_t::relaxed);
+
+      if (!value) return _cfg.min_block_size;
+      return nupp::minimum(size_t(double(value) * _cfg.block_size_multiplier),
+                           _cfg.max_block_size);
+    }
+  }
+
+  /**
+   * @brief Returns the block size one step smaller than the given one
+   *        (the upstream bounds/granularity not taken into account)
+   **/
+  static size_t get_prev_block_size(const size_t size) noexcept {
+    if constexpr (_cfg.min_block_size == _cfg.max_block_size)
+      return _cfg.min_block_size;
+    else {
+      const auto value = size_t(std::ceil(double(size)
+                                          / _cfg.block_size_multiplier));
+      return nupp::maximum(value, _cfg.min_block_size);
+    }
+  }
+
+  /**
+   * @brief Returns the next smallest allocation size that is valid
+   *        for the upstream (i.e., is not less than its min_size(),
+   *        if it's bound, and a multiple of it if it's granular)
+   **/
+  static size_t ceil_allocation_size(const size_t size) noexcept {
+    if constexpr (granular_resource<upstream_t>) {
+      const auto ups_min_size = upstream_t::min_size();
+      const auto remainder = size % ups_min_size;
+      return size + (remainder > 0) * (ups_min_size - remainder);
+    }
+    else if constexpr (bound_resource<upstream_t>)
+      return nupp::maximum(size, upstream_t::min_size());
+    else return size;
   }
 
   void copy_internals(const cache_resource_impl& rhs) noexcept {
@@ -99,6 +147,12 @@ public:
 
   static_assert(_cfg.granularity >= min_granularity);
 };
+
+template <auto _cfg>
+std::pair<void*, size_t> cache_resource_impl<_cfg>::upstream_allocate
+  (const size_t size, const pow2_t alignment) noexcept {
+  return {};
+}
 
 template <auto _cfg>
 void* cache_resource_impl<_cfg>::allocate(const size_t size,
