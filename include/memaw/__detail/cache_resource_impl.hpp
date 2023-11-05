@@ -52,7 +52,7 @@ public:
 
   [[nodiscard]] inline void* allocate(size_t, pow2_t) noexcept;
 
-  void deallocate(void*, size_t, pow2_t = {}) noexcept {}
+  inline void deallocate(void*, size_t, pow2_t = {}) noexcept;
 
   bool operator==(const cache_resource_impl& rhs) const noexcept {
     // While inside constructors & assignment operator we can ignore
@@ -263,6 +263,26 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
       return result;
     }
   }
+}
+
+template <auto _cfg>
+void cache_resource_impl<_cfg>::deallocate(void* ptr, const size_t size,
+                                           const pow2_t alignment) noexcept {
+  if (!ptr || !size) [[unlikely]] return;
+
+  const std::atomic_ref head_ref{free_chunks_head_};
+
+  auto chunk = new (ptr) free_chunk_t {
+    .next = head_ref.load(mo_t::relaxed),
+    .size = size,
+    .alignment = alignment
+  };
+
+  /* Just keep the free chunks on the stack. Note that since the
+   * memory is only released in the destructor, we don't have to deal
+   * with the ABA problem here */
+  while (!head_ref.compare_exchange_weak(chunk->next, chunk,
+                                         mo_t::release, mo_t::relaxed));
 }
 
 } // namespace memaw::__detail
