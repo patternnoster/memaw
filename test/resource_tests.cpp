@@ -21,7 +21,6 @@
 #include "test_resource.hpp"
 
 using namespace memaw;
-using std::byte;
 
 MATCHER_P(IsAlignedBy, log2, "") {
   return (uintptr_t(arg) & ((uintptr_t(1) << log2) - 1)) == 0;
@@ -446,7 +445,7 @@ protected:
     // Now make the upstream allocation function
     const size_t req_mem = total_block_sizes + block_alignment * count
       + additional_memory;
-    memory = std::make_unique_for_overwrite<byte[]>(req_mem);
+    memory = std::make_unique_for_overwrite<std::byte[]>(req_mem);
 
     next_ptr = memory.get();
     EXPECT_CALL(mock, allocate(_, _)).Times(int(count))
@@ -458,7 +457,7 @@ protected:
         const auto result =
           align_by(next_ptr, nupp::maximum(alignment,
                                            upstream_t::params.alignment));
-        next_ptr = (byte*)result + size;
+        next_ptr = (std::byte*)result + size;
 
         allocations.emplace(result, size, alignment);
         return reinterpret_cast<void*>(result);
@@ -500,8 +499,8 @@ protected:
   mock_resource mock;
   std::shared_ptr<T> test_cache;
 
-  std::unique_ptr<byte[]> memory;
-  byte* next_ptr;
+  std::unique_ptr<std::byte[]> memory;
+  std::byte* next_ptr;
 
   struct allocation {
     void* ptr;
@@ -535,7 +534,7 @@ TYPED_TEST(CacheResourceTests, allocation_base) {
 
   const auto init_ptr = this->align_by(this->memory.get(),
                                        test_t::block_alignment);
-  auto next_ptr = (byte*)init_ptr;
+  auto next_ptr = (std::byte*)init_ptr;
 
   size_t allocated = 0;
   size_t curr_block = 0;
@@ -552,8 +551,8 @@ TYPED_TEST(CacheResourceTests, allocation_base) {
 
     if ((allocated + to_alloc) > this->get_block_size(curr_block)) {
       const auto diff = this->get_block_size(curr_block) - allocated;
-      next_ptr = (byte*)this->align_by(next_ptr + diff,
-                                       test_t::block_alignment);
+      next_ptr = (std::byte*)this->align_by(next_ptr + diff,
+                                            test_t::block_alignment);
       ++curr_block;
       allocated = to_alloc;
     }
@@ -561,7 +560,7 @@ TYPED_TEST(CacheResourceTests, allocation_base) {
       allocated+= to_alloc;
 
     EXPECT_EQ(alloc_result, next_ptr);
-    next_ptr = (byte*)next_ptr + to_alloc;
+    next_ptr = (std::byte*)next_ptr + to_alloc;
 
     this->test_cache->deallocate(alloc_result, to_alloc);
   }
@@ -682,7 +681,7 @@ TYPED_TEST(CacheResourceTests, randomized_multithread) {
   constexpr size_t count = threads_count * allocs_per_thread;
 
   auto blocks = std::make_unique<allocation[]>(count);
-  auto block_ptrs = std::make_unique<std::unique_ptr<byte[]>[]>(count);
+  auto block_ptrs = std::make_unique<std::unique_ptr<std::byte[]>[]>(count);
   std::atomic<size_t> last_block = 0;
 
   EXPECT_CALL(this->mock, allocate(_, _))
@@ -692,7 +691,7 @@ TYPED_TEST(CacheResourceTests, randomized_multithread) {
         return nullptr;
 
       const auto id = last_block.fetch_add(1, std::memory_order_relaxed);
-      block_ptrs[id] = std::make_unique<byte[]>(size + alignment);
+      block_ptrs[id] = std::make_unique<std::byte[]>(size + alignment);
       blocks[id] = { this->align_by(block_ptrs[id].get(), alignment),
                      size, alignment };
       return blocks[id].ptr;
@@ -770,7 +769,8 @@ TYPED_TEST(CacheResourceTests, randomized_multithread) {
     bool found_block = false;
     for (const auto& b : this->allocations) {
       if (b.ptr <= alloc.ptr
-          && ((byte*)b.ptr + b.size) >= ((byte*)alloc.ptr + alloc.size)) {
+          && ((std::byte*)b.ptr + b.size)
+              >= ((std::byte*)alloc.ptr + alloc.size)) {
         found_block = true;
         break;
       }

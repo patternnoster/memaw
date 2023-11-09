@@ -12,9 +12,6 @@ jobs:
             compiler: msvc-latest
           - os: windows-latest
             compiler: gcc-13
-        #Temporary disable (-mcx16 problem)
-          - os: windows-latest
-            compiler: clang-16
         #Let's wait until libc++ implements std::atomic_ref
         #include:
         #  - os: macos-latest
