@@ -34,25 +34,35 @@ concept has_nothrow_deallocate = requires(R res, void* ptr, size_t size,
   { res.deallocate(ptr, size, alignment) } noexcept;
 };
 
+#ifdef __cpp_exceptions
+constexpr bool exceptions_enabled = true;
+#else
+constexpr bool exceptions_enabled = false;
+#endif
+
 template <typename R>
 inline void* try_allocate(R& resource, const size_t size,
                           const size_t alignment) noexcept {
-  if constexpr (has_nothrow_allocate<R>)
+  if constexpr (!exceptions_enabled || has_nothrow_allocate<R>)
     return resource.allocate(size, alignment);
   else {
+#ifdef __cpp_exceptions
     try { return resource.allocate(size, alignment); }
     catch (...) { return nullptr; }
+#endif
   }
 }
 
 template <typename R>
 inline void try_deallocate(R& resource, void* const ptr,
                            const size_t size, const size_t alignment) noexcept {
-  if constexpr (has_nothrow_deallocate<R>)
+  if constexpr (!exceptions_enabled || has_nothrow_deallocate<R>)
     return resource.deallocate(ptr, size, alignment);
   else {
+#ifdef __cpp_exceptions
     try { return resource.deallocate(ptr, size, alignment); }
     catch (...) {}
+#endif
   }
 }
 
