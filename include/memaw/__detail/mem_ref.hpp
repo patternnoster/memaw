@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <atomic128/atomic128_ref.hpp>
 #include <concepts>
 
 /**
@@ -13,7 +14,7 @@
 
 namespace memaw::__detail {
 
-using mo_t = std::memory_order;
+using namespace atomic128;
 
 enum thread_safety_t {
   thread_unsafe,
@@ -57,5 +58,62 @@ public:
 
   T& ref;
 };
+
+template <typename T>
+struct mem_ref<T, thread_safe> {
+public:
+  T load(const mo_t mo) const noexcept {
+    return std::atomic_ref(ref).load(mo);
+  }
+
+  void store(const T& val, const mo_t mo) const noexcept {
+    std::atomic_ref(ref).store(val, mo);
+  }
+
+  template <std::same_as<mo_t>... MOs>
+  bool compare_exchange_strong(T& old_val, const T& new_val,
+                               const MOs... mos) const noexcept {
+    return
+      std::atomic_ref(ref).compare_exchange_strong(old_val, new_val, mos...);
+  }
+
+  template <std::same_as<mo_t>... MOs>
+  bool compare_exchange_weak(T& old_val, const T& new_val,
+                             const MOs... mos) const noexcept {
+    return
+      std::atomic_ref(ref).compare_exchange_weak(old_val, new_val, mos...);
+  }
+
+  T& ref;
+};
+
+template <atomic128_referenceable T>
+struct mem_ref<T, thread_safe> {
+public:
+  template <std::same_as<mo_t>... MOs>
+  bool compare_exchange_strong(T& old_val, const T& new_val,
+                               const MOs... mos) const noexcept {
+    return
+      atomic128_ref(ref).compare_exchange_strong(old_val, new_val, mos...);
+  }
+
+  template <std::same_as<mo_t>... MOs>
+  bool compare_exchange_weak(T& old_val, const T& new_val,
+                             const MOs... mos) const noexcept {
+    return
+      atomic128_ref(ref).compare_exchange_weak(old_val, new_val, mos...);
+  }
+
+  T& ref;
+};
+
+/**
+ * @brief A factory function for mem_ref that allows to avoid
+ *        specifying the reference type explicitly
+ **/
+template <thread_safety_t _ts, typename T>
+constexpr auto make_mem_ref(T& ref) noexcept {
+  return mem_ref<T, _ts>(ref);
+}
 
 } // namespace memaw::__detail
