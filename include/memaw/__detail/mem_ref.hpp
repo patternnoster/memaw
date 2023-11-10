@@ -59,6 +59,9 @@ public:
   T& ref;
 };
 
+#ifdef __cpp_lib_atomic_ref
+/* Use std::atomic_ref for thread_safe calls by default if it's
+ * available */
 template <typename T>
 struct mem_ref<T, thread_safe> {
 public:
@@ -86,6 +89,51 @@ public:
 
   T& ref;
 };
+#elif defined(__GCC_ATOMIC_POINTER_LOCK_FREE)
+/* Alternatively use the __atomic_* built-ins for systems that do not
+ * yet support std::atomic_ref (e.g., libc++ as of now, in the year
+ * 20-freaking-23) */
+template <typename T>
+struct mem_ref<T, thread_safe> {
+public:
+  /* We're not going to do runtime conversions since this is a
+   * reasonable thing to require, it's true for our target compilers
+   * and we're going to get rid of this code as soon as libc++
+   * implements std::atomic_ref anyway */
+  static_assert(unsigned(mo_t::relaxed) == __ATOMIC_RELAXED);
+  static_assert(unsigned(mo_t::consume) == __ATOMIC_CONSUME);
+  static_assert(unsigned(mo_t::acquire) == __ATOMIC_ACQUIRE);
+  static_assert(unsigned(mo_t::release) == __ATOMIC_RELEASE);
+  static_assert(unsigned(mo_t::acq_rel) == __ATOMIC_ACQ_REL);
+  static_assert(unsigned(mo_t::seq_cst) == __ATOMIC_SEQ_CST);
+
+  T load(const mo_t mo) const noexcept {
+    return __atomic_load_n(&ref, unsigned(mo));
+  }
+
+  void store(const T& val, const mo_t mo) const noexcept {
+    __atomic_store_n(&ref, val, unsigned(mo));
+  }
+
+  template <std::same_as<mo_t>... MOs>
+  bool compare_exchange_strong(T& old_val, const T& new_val,
+                               const MOs... mos) const noexcept {
+    return __atomic_compare_exchange_n(&ref, &old_val, new_val, false,
+                                       unsigned(mos)...);
+  }
+
+  template <std::same_as<mo_t>... MOs>
+  bool compare_exchange_weak(T& old_val, const T& new_val,
+                             const MOs... mos) const noexcept {
+    return __atomic_compare_exchange_n(&ref, &old_val, new_val, true,
+                                       unsigned(mos)...);
+  }
+
+  T& ref;
+};
+#else
+#  error Either std::atomic_ref or __atomic_* built-ins must be available
+#endif
 
 template <atomic128_referenceable T>
 struct mem_ref<T, thread_safe> {
