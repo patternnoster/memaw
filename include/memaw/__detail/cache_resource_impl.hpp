@@ -1,11 +1,10 @@
 #pragma once
-#include <atomic128/atomic128_ref.hpp>
 #include <cmath>
 #include <type_traits>
 #include <utility>
 
-#include "base.hpp"
 #include "concepts_impl.hpp"
+#include "mem_ref.hpp"
 
 /**
  * @file
@@ -17,12 +16,12 @@
 
 namespace memaw::__detail {
 
-using namespace atomic128;
-
 template <auto _cfg>
 class cache_resource_impl {
 public:
   using upstream_t = typename decltype(_cfg)::upstream_resource;
+
+  constexpr static auto thread_safety = __detail::thread_safe;
 
   constexpr cache_resource_impl()
     noexcept(std::is_nothrow_default_constructible_v<upstream_t>) = default;
@@ -73,7 +72,7 @@ private:
       return _cfg.max_block_size;
     else {
       const size_t value =
-        std::atomic_ref(last_block_size_).load(mo_t::relaxed);
+        make_mem_ref<thread_safety>(last_block_size_).load(mo_t::relaxed);
 
       if (!value) return _cfg.min_block_size;
       return nupp::minimum(size_t(double(value) * _cfg.block_size_multiplier),
@@ -126,6 +125,8 @@ private:
   struct alignas(16) head_block_t {
     uintptr_t ptr;
     size_t size = 0;
+
+    bool operator==(const head_block_t&) const noexcept = default;
   };
   head_block_t head_;
 
@@ -145,6 +146,7 @@ public:
   constexpr static auto min_granularity =
     pow2_t{ sizeof(free_chunk_t), pow2_t::ceil };
 
+  static_assert(min_granularity >= alignof(std::max_align_t));
   static_assert(_cfg.granularity >= min_granularity);
 };
 
@@ -161,7 +163,7 @@ std::pair<void*, size_t> cache_resource_impl<_cfg>::upstream_allocate
     next_allocation >= size ? next_allocation : ceil_allocation_size(size);
 
   for (;;) {
-    const std::atomic_ref lbs_ref{last_block_size_};
+    const auto lbs_ref = make_mem_ref<thread_safety>(last_block_size_);
 
     result = try_allocate(upstream_, allocation_size,
                           nupp::maximum(alignment, _cfg.granularity));
@@ -210,8 +212,8 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
    * here, realizing we can end up loading values from different
    * blocks (in which case the first CAS will fix that) */
   auto curr_head = head_block_t {
-    .ptr = std::atomic_ref(head_.ptr).load(mo_t::relaxed),
-    .size = std::atomic_ref(head_.size).load(mo_t::relaxed)
+    .ptr = make_mem_ref<thread_safety>(head_.ptr).load(mo_t::relaxed),
+    .size = make_mem_ref<thread_safety>(head_.size).load(mo_t::relaxed)
   };
 
   for (;;) {
@@ -223,7 +225,7 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
       .size = curr_head.size - size
     };
 
-    if (atomic128_ref(head_)
+    if (make_mem_ref<thread_safety>(head_)
         .compare_exchange_weak(curr_head, new_head,
                                mo_t::acquire, mo_t::relaxed))
       // The easy and likely way out
@@ -252,7 +254,7 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
     }
 
     // The allocated block has more free space: try to exchange
-    if (atomic128_ref(head_)
+    if (make_mem_ref<thread_safety>(head_)
         .compare_exchange_weak(curr_head, next_head,
                                mo_t::release, mo_t::relaxed)) {
       // If successful, marks free what's remaining of the old head
@@ -270,7 +272,7 @@ void cache_resource_impl<_cfg>::deallocate(void* ptr, const size_t size,
                                            const pow2_t alignment) noexcept {
   if (!ptr || !size) [[unlikely]] return;
 
-  const std::atomic_ref head_ref{free_chunks_head_};
+  const auto head_ref = make_mem_ref<thread_safety>(free_chunks_head_);
 
   auto chunk = new (ptr) free_chunk_t {
     .next = head_ref.load(mo_t::relaxed),
@@ -300,8 +302,8 @@ cache_resource_impl<_cfg>::~cache_resource_impl() noexcept {
     };
   else regions = nullptr;
 
-  for (auto chunk = std::atomic_ref(free_chunks_head_).load(mo_t::acquire);
-       chunk;) {
+  for (auto chunk = make_mem_ref<thread_safety>(free_chunks_head_)
+         .load(mo_t::acquire); chunk;) {
     const auto chunk_begin = uintptr_t(chunk);
     const auto chunk_end = chunk_begin + chunk->size;
 
