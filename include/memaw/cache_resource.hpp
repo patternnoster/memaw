@@ -77,6 +77,17 @@ struct cache_resource_config_t {
    *        integral n >= 0, but not greater than max_block_size
    **/
   const double block_size_multiplier = 2.0;
+
+  /**
+   * @brief Thread safety policy: if set to true, the implementation
+   *        will use atomic instructions to manage its internal
+   *        structures (requires DWCAS). The thread safe
+   *        implementation is lock-free
+   * @note  If the underlying resource is not thread safe, setting this
+   *        parameter to true will change the type of instructions
+   *        used but won't make the cache thread safe either
+   **/
+  const bool thread_safe = thread_safe_resource<upstream_resource>;
 };
 
 /**

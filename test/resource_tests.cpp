@@ -368,28 +368,23 @@ using upstream3_t =
   test_resource<resource_params{ .min_size = 1000, .alignment = 32,
                                  .is_granular = true, .is_sweeping = true}>;
 
-template <resource U>
+template <resource U, bool _thread_safe = true>
 using cache1_t = cache_resource<cache_resource_config_t<U>{
   .granularity = pow2_t{1_KiB},
   .min_block_size = 1_MiB,
   .max_block_size = 4_MiB,
-  .block_size_multiplier = 2.42
+  .block_size_multiplier = 2.42,
+  .thread_safe = _thread_safe
 }>;
 
-template <resource U>
+template <resource U, bool _thread_safe = true>
 using cache2_t = cache_resource<cache_resource_config_t<U>{
   .granularity = pow2_t{32},
   .min_block_size = 1500,
   .max_block_size = 100000,
-  .block_size_multiplier = 3
+  .block_size_multiplier = 3,
+  .thread_safe = _thread_safe
 }>;
-
-using res1_t = cache1_t<upstream1_t>;
-using res2_t = cache1_t<upstream2_t>;
-using res3_t = cache1_t<upstream3_t>;
-using res4_t = cache2_t<upstream1_t>;
-using res5_t = cache2_t<upstream2_t>;
-using res6_t = cache2_t<upstream3_t>;
 
 template <typename T>
 class CacheResourceTests: public testing::Test {
@@ -515,7 +510,15 @@ protected:
 };
 
 using CacheResources =
-  testing::Types<res1_t, res2_t, res3_t, res4_t, res5_t, res6_t>;
+  testing::Types<cache1_t<upstream1_t>, cache1_t<upstream2_t>,
+                 cache1_t<upstream3_t>,
+                 cache2_t<upstream1_t>, cache2_t<upstream2_t>,
+                 cache2_t<upstream3_t>,
+                 cache1_t<upstream1_t, false>, cache1_t<upstream2_t, false>,
+                 cache1_t<upstream3_t, false>,
+                 cache2_t<upstream1_t, false>, cache2_t<upstream2_t, false>,
+                 cache2_t<upstream3_t, false>>;
+
 TYPED_TEST_SUITE(CacheResourceTests, CacheResources);
 
 TYPED_TEST(CacheResourceTests, allocation_base) {
@@ -574,7 +577,7 @@ TYPED_TEST(CacheResourceTests, allocation_corner) {
   // First pre-allocate some blocks
   this->mock_upstream_alloc(blocks_count);
 
-  size_t last_alloc;
+  size_t last_alloc = 0;
   while (this->allocations.size() < blocks_count) {
     last_alloc = this->get_rand_alloc_size();
     const auto ptr = this->test_cache->allocate(last_alloc);
@@ -672,7 +675,17 @@ TYPED_TEST(CacheResourceTests, deallocation) {
   this->deallocate_all();
 }
 
-TYPED_TEST(CacheResourceTests, randomized_multithread) {
+template <typename T>
+class CacheResourceThreadingTests: public CacheResourceTests<T> {};
+
+using ThreadSafeCacheResources =
+  testing::Types<cache1_t<upstream1_t>, cache1_t<upstream2_t>,
+                 cache1_t<upstream3_t>,
+                 cache2_t<upstream1_t>, cache2_t<upstream2_t>,
+                 cache2_t<upstream3_t>>;
+TYPED_TEST_SUITE(CacheResourceThreadingTests, ThreadSafeCacheResources);
+
+TYPED_TEST(CacheResourceThreadingTests, randomized_multithread) {
   using allocation = CacheResourceTests<TypeParam>::allocation;
 
   constexpr size_t threads_count = 8;

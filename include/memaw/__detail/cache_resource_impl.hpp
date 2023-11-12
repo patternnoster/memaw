@@ -21,7 +21,8 @@ class cache_resource_impl {
 public:
   using upstream_t = typename decltype(_cfg)::upstream_resource;
 
-  constexpr static auto thread_safety = __detail::thread_safe;
+  constexpr static auto thread_safety = _cfg.thread_safe
+    ? __detail::thread_safe : __detail::thread_unsafe;
 
   constexpr cache_resource_impl()
     noexcept(std::is_nothrow_default_constructible_v<upstream_t>) = default;
