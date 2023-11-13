@@ -522,16 +522,9 @@ using CacheResources =
 TYPED_TEST_SUITE(CacheResourceTests, CacheResources);
 
 TYPED_TEST(CacheResourceTests, allocation_base) {
-  using upstream = TypeParam::upstream_t;
   using test_t = CacheResourceTests<TypeParam>;
 
   constexpr size_t blocks_count = 8;
-
-  if constexpr (overaligning_resource<upstream>) {
-    EXPECT_EQ(this->test_cache->guaranteed_alignment(),
-              (nupp::minimum(TypeParam::config.granularity.value,
-                             upstream::params.alignment)));
-  }
 
   this->mock_upstream_alloc(blocks_count);
 

@@ -149,15 +149,22 @@ TYPED_TEST(CacheResourceConceptsTests, concepts) {
   EXPECT_TRUE(granular_resource<TypeParam>);
   EXPECT_TRUE(sweeping_resource<TypeParam>);
 
+  if constexpr (TypeParam::config.granularity > alignof(std::max_align_t)) {
+    EXPECT_TRUE(overaligning_resource<TypeParam>);
+    EXPECT_EQ(TypeParam::guaranteed_alignment(),
+              TypeParam::config.granularity.value);
+  }
+  else {
+    EXPECT_FALSE(overaligning_resource<TypeParam>);
+  }
+
   if constexpr (std::same_as<upstream, upstream1_t>) {
     EXPECT_FALSE(thread_safe_resource<TypeParam>);
     EXPECT_FALSE((substitutable_resource_for<TypeParam, upstream2_t>));
-    EXPECT_TRUE(overaligning_resource<TypeParam>);
   }
   else {
     EXPECT_TRUE(thread_safe_resource<TypeParam>);
     EXPECT_TRUE((substitutable_resource_for<TypeParam, upstream2_t>));
-    EXPECT_FALSE(overaligning_resource<TypeParam>);
   }
 
   EXPECT_FALSE((substitutable_resource_for<TypeParam, res1_t>));
