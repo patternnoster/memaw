@@ -36,12 +36,9 @@ struct cache_resource_config_t {
    *        every allocation must be a multiple of this value. Must
    *        not be smaller than cache_resource::min_granularity (see
    *        below)
-   * @note  This value also determines the alignment parameter passed
-   *        to the upstream allocate() call
-   * @note  If R is an overaligning_resource, the cache will model
-   *        overaligning_resource as well with the guaranteed
-   *        alignment value equal to the minimum of that of R and this
-   *        value
+   * @note  This value also determines the guaranteed alignment and
+   *        the alignment parameter passed to the upstream allocate()
+   *        call
    **/
   const pow2_t granularity = pow2_t{4_KiB};
 
@@ -50,8 +47,8 @@ struct cache_resource_config_t {
    *        from the underlying resource. Must not be smaller than
    *        granularity
    * @note  If R is a bound_resource, any block size value will be
-   *        automatically adjusted to be greater than R::min_size()
-   *        (and additionally a multiple of it if R is also a
+   *        automatically ceiled to be greater than R::min_size() (and
+   *        additionally a multiple of it if R is also a
    *        granular_resource) at runtime
    **/
   const size_t min_block_size = 32_MiB;
@@ -106,7 +103,7 @@ concept cache_resource_config = requires {
  *        requests. Memory is not freed until the resource is
  *        destructed (as in std::pmr::monotonic_buffer_resource)
  **/
-template <cache_resource_config auto _cfg>
+template <cache_resource_config auto _config>
 class cache_resource {
 public:
   /**
@@ -114,17 +111,17 @@ public:
    *        equals 32 bytes. Always >= alignof(std::max_align_t).
    **/
   constexpr static pow2_t min_granularity =
-    __detail::cache_resource_impl<_cfg>::min_granularity;
+    __detail::cache_resource_impl<_config>::min_granularity;
 
-  static_assert(_cfg.granularity >= min_granularity);
-  static_assert(_cfg.min_block_size >= _cfg.granularity);
-  static_assert(_cfg.max_block_size >= _cfg.min_block_size);
-  static_assert(_cfg.max_block_size == _cfg.min_block_size
-                || _cfg.block_size_multiplier > 1);
+  static_assert(_config.granularity >= min_granularity);
+  static_assert(_config.min_block_size >= _config.granularity);
+  static_assert(_config.max_block_size >= _config.min_block_size);
+  static_assert(_config.max_block_size == _config.min_block_size
+                || _config.block_size_multiplier > 1);
 
-  using upstream_t = typename decltype(_cfg)::upstream_resource;
+  using upstream_t = typename decltype(_config)::upstream_resource;
 
-  constexpr static auto config = _cfg;
+  constexpr static auto config = _config;
 
   constexpr static bool is_granular = true;
   constexpr static bool is_sweeping = true;
@@ -140,17 +137,16 @@ public:
    *        this value
    **/
   constexpr static pow2_t min_size() noexcept {
-    return _cfg.granularity;
+    return _config.granularity;
   }
 
   /**
    * @brief Returns the minimal alignment of any address allocated by
-   *        the cache if its configuration and the upstream resource's
-   *        guaranteed_alignment() allow for it
+   *        the cache if its configuration allows that
    **/
   constexpr static pow2_t guaranteed_alignment() noexcept
-    requires(overaligning_resource<upstream_t>) {
-    return nupp::minimum(_cfg.granularity, upstream_t::guaranteed_alignment());
+    requires(_config.granularity > alignof(std::max_align_t)) {
+    return _config.granularity;
   }
 
   constexpr cache_resource()
@@ -174,6 +170,9 @@ public:
   /**
    * @brief Allocates memory from the cache, calling the upstream
    *        allocate() if there is not enough left
+   * @param size must be a multiple of the configured granularity
+   * @param alignment must be a power of 2. If it is greater than the
+   *        configured granularity, additional padding will be used
    **/
   [[nodiscard]] void* allocate
     (const size_t size,
@@ -193,7 +192,7 @@ public:
   bool operator==(const cache_resource&) const noexcept = default;
 
 private:
-  __detail::cache_resource_impl<_cfg> impl_;
+  __detail::cache_resource_impl<_config> impl_;
 };
 
 template <sweeping_resource R>
