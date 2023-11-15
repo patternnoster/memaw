@@ -453,7 +453,7 @@ protected:
       .WillRepeatedly([this]
                       (const size_t size, const size_t alignment) {
         EXPECT_EQ(size, get_block_size(allocations.size()));
-        EXPECT_TRUE(nupp::is_pow2(alignment));
+        EXPECT_EQ(alignment, T::config.granularity);
 
         const auto result =
           align_by(next_ptr, nupp::maximum(alignment,
@@ -473,8 +473,7 @@ protected:
 
         ASSERT_NE(it, allocations.end());
         ASSERT_LE(it->size, size);
-        EXPECT_EQ(it->alignment,
-                  nupp::maximum(alignment, T::config.granularity));
+        EXPECT_EQ(it->alignment, T::config.granularity);
 
         // Allow sweeping
         size-= it->size;
@@ -571,12 +570,12 @@ TYPED_TEST(CacheResourceTests, allocation_base) {
 }
 
 TYPED_TEST(CacheResourceTests, allocation_corner) {
-  constexpr size_t blocks_count = 4;
+  constexpr size_t blocks_count = 8;
 
   // First pre-allocate some blocks
   this->mock_upstream_alloc(blocks_count);
 
-  size_t last_alloc = 0;
+  uintptr_t end;
   while (this->allocations.size() < blocks_count) {
     const auto [size, alignment] = this->get_rand_alloc();
 
@@ -585,12 +584,12 @@ TYPED_TEST(CacheResourceTests, allocation_corner) {
     EXPECT_EQ(ptr, this->align_by(ptr, alignment));
     this->test_cache->deallocate(ptr, size, alignment);
 
-    last_alloc = size;
+    end = uintptr_t(ptr) + size;
   }
 
   // How much we can still allocate from the current block
-  auto drain_size = this->get_block_size(blocks_count - 1);
-  drain_size-= (drain_size % TypeParam::config.granularity) + last_alloc;
+  size_t drain_size = uintptr_t(this->next_ptr) - end;
+  drain_size-= drain_size % TypeParam::config.granularity;
 
   // Now do a direct allocation
   size_t bigger_than_max = this->get_block_size(blocks_count)
@@ -598,7 +597,7 @@ TYPED_TEST(CacheResourceTests, allocation_corner) {
   bigger_than_max-= bigger_than_max % TypeParam::config.granularity;
 
   EXPECT_CALL(this->mock, allocate(_, _)).Times(1)
-    .WillRepeatedly([bigger_than_max](const size_t size, const size_t) {
+    .WillOnce([bigger_than_max](const size_t size, const size_t) {
       EXPECT_GE(size, bigger_than_max);
       return nullptr;
     });
@@ -608,33 +607,37 @@ TYPED_TEST(CacheResourceTests, allocation_corner) {
   const auto reg_ptr =
     this->test_cache->allocate(TypeParam::config.granularity.value);
   EXPECT_NE(reg_ptr, nullptr);
+
   this->test_cache->deallocate(reg_ptr, TypeParam::config.granularity.value);
   drain_size-= TypeParam::config.granularity.value;
 
   // Now too big of alignment
-  auto big_alignment = TypeParam::config.granularity.value * 2;
-  while (!((uintptr_t(reg_ptr) + TypeParam::config.granularity.value)
-           & (big_alignment - 1)))
+  const auto end_ptr = uintptr_t(reg_ptr) + drain_size;
+  auto big_alignment =
+    pow2_t{ TypeParam::config.max_block_size, pow2_t::ceil }.value;
+  while (uintptr_t(this->align_by(reg_ptr, big_alignment))
+         + TypeParam::config.granularity.value < end_ptr)
     big_alignment*= 2;
 
-  const size_t reverse_calls_count = 1 +
-    nupp::minimum(blocks_count,
-                  size_t(std::ceil(double(this->get_block_size(blocks_count))
-                                   / this->get_block_size(0)
-                                   / TypeParam::config.block_size_multiplier)));
-
-  EXPECT_CALL(this->mock, allocate(_, _)).Times(int(reverse_calls_count))
-    .WillRepeatedly([big_alignment](const size_t, const size_t alignment) {
-      EXPECT_EQ(alignment, big_alignment);
+  EXPECT_CALL(this->mock, allocate(_, _)).Times(1)
+    .WillOnce([](const size_t, const size_t alignment) {
+      EXPECT_EQ(alignment, TypeParam::config.granularity);
       return nullptr;
     });
   EXPECT_EQ((this->test_cache->allocate(TypeParam::config.granularity.value,
                                         big_alignment)), nullptr);
 
-  // Now drain and reverse
+  // Finally drain and reverse
   const auto ptr = this->test_cache->allocate(drain_size);
   EXPECT_NE(ptr, nullptr);
   this->test_cache->deallocate(ptr, drain_size);
+
+  size_t reverse_calls_count = 1;
+  for (size_t i = 0; i < blocks_count; ++i) {
+    if (this->get_block_size(i) >= TypeParam::config.max_block_size)
+      break;
+    ++reverse_calls_count;
+  }
 
   EXPECT_CALL(this->mock, allocate(_, _)).Times(int(reverse_calls_count))
     .WillRepeatedly([](const size_t, const size_t) {
