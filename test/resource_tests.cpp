@@ -419,14 +419,20 @@ protected:
       return bs_lim;
   }
 
-  constexpr static size_t get_rand_alloc_size
+  constexpr static std::pair<size_t, pow2_t> get_rand_alloc
     (const size_t max = T::config.min_block_size) noexcept {
-    size_t result = 0;
-    while (!result) {
-      result = rand() % max;
-      result-= result % T::config.granularity;
+    size_t size = 0;
+    while (!size) {
+      size = rand() % max;
+      size-= size % T::config.granularity;
     }
-    return result;
+
+    const auto al_shift = -2 + rand() % 5;
+    const pow2_t alignment = al_shift < 0
+      ? (T::config.granularity >> -al_shift)
+      : (T::config.granularity << al_shift);
+
+    return std::make_pair(size, alignment);
   }
 
   void mock_upstream_alloc(const size_t count,
@@ -542,7 +548,7 @@ TYPED_TEST(CacheResourceTests, allocation_base) {
       continue;
     }
 
-    const size_t to_alloc = this->get_rand_alloc_size();
+    const auto [to_alloc, _] = this->get_rand_alloc();
     const auto alloc_result = this->test_cache->allocate(to_alloc);
 
     if ((allocated + to_alloc) > this->get_block_size(curr_block)) {
@@ -572,10 +578,14 @@ TYPED_TEST(CacheResourceTests, allocation_corner) {
 
   size_t last_alloc = 0;
   while (this->allocations.size() < blocks_count) {
-    last_alloc = this->get_rand_alloc_size();
-    const auto ptr = this->test_cache->allocate(last_alloc);
+    const auto [size, alignment] = this->get_rand_alloc();
+
+    const auto ptr = this->test_cache->allocate(size, alignment);
     ASSERT_NE(ptr, nullptr);
-    this->test_cache->deallocate(ptr, last_alloc);
+    EXPECT_EQ(ptr, this->align_by(ptr, alignment));
+    this->test_cache->deallocate(ptr, size, alignment);
+
+    last_alloc = size;
   }
 
   // How much we can still allocate from the current block
@@ -647,15 +657,10 @@ TYPED_TEST(CacheResourceTests, deallocation) {
   // First make the allocations
   std::vector<allocation> allocs;
   while (this->allocations.size() < blocks_count) {
-    const size_t to_alloc = this->get_rand_alloc_size();
-    size_t alignment = size_t(1)
-      << (rand() % (TypeParam::config.granularity.log2() + 1));
-    if (rand() % blocks_count == 0) // throw in overaligned
-      alignment<<= rand() % blocks_count;
-
-    const auto ptr = this->test_cache->allocate(to_alloc, alignment);
+    const auto [size, alignment] = this->get_rand_alloc();
+    const auto ptr = this->test_cache->allocate(size, alignment);
     ASSERT_NE(ptr, nullptr);
-    allocs.emplace_back(ptr, to_alloc, alignment);
+    allocs.emplace_back(ptr, size, alignment);
   }
 
   while (!allocs.empty()) {
@@ -715,22 +720,14 @@ TYPED_TEST(CacheResourceThreadingTests, randomized_multithread) {
       std::vector<allocation> local_allocs;
 
       size_t allocs_num = 0;
-      bool had_overaligned = false;
       while (allocs_num < allocs_per_thread || !local_allocs.empty()) {
         if (allocs_num < allocs_per_thread && (rand() % 2)) {
           // Allocate
-          const size_t to_alloc = this->get_rand_alloc_size(4_KiB);
-          const size_t alignment = size_t(1)
-            << (rand() % ((had_overaligned ? 1 : 2)
-                          * TypeParam::config.granularity.log2()));
-
-          if (alignment > TypeParam::config.granularity)
-            had_overaligned = true;
-
-          const auto result = this->test_cache->allocate(to_alloc, alignment);
+          const auto [size, alignment] = this->get_rand_alloc(4_KiB);
+          const auto result = this->test_cache->allocate(size, alignment);
           if (result) {
             EXPECT_EQ(result, (this->align_by(result, alignment)));
-            local_allocs.emplace_back(result, to_alloc, alignment);
+            local_allocs.emplace_back(result, size, alignment);
             ++allocs_num;
           }
         }
