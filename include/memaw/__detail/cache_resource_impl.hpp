@@ -16,6 +16,12 @@
 
 namespace memaw::__detail {
 
+struct alignas(16) head_block_t {
+  uintptr_t ptr;
+  size_t size = 0;
+  bool operator==(const head_block_t&) const noexcept = default;
+};
+
 template <auto _cfg>
 class cache_resource_impl {
 public:
@@ -61,8 +67,6 @@ public:
   }
 
 private:
-  inline std::pair<void*, size_t> upstream_allocate(size_t, pow2_t) noexcept;
-
   /**
    * @brief Returns the next block size acquired from configuration
    *        alone (the upstream bounds/granularity not taken into
@@ -123,12 +127,13 @@ private:
     last_block_size_ = 0;
   }
 
-  struct alignas(16) head_block_t {
-    uintptr_t ptr;
-    size_t size = 0;
+  /**
+   * @brief Allocates the given (non-zero) amount of bytes from the
+   *        upstream with the regular alignment. On failure returns
+   *        the block of size 0
+   **/
+  inline head_block_t upstream_allocate(size_t) noexcept;
 
-    bool operator==(const head_block_t&) const noexcept = default;
-  };
   head_block_t head_;
 
   struct free_chunk_t {
@@ -152,51 +157,46 @@ public:
 };
 
 template <auto _cfg>
-std::pair<void*, size_t> cache_resource_impl<_cfg>::upstream_allocate
-  (const size_t size, const pow2_t alignment) noexcept {
+head_block_t cache_resource_impl<_cfg>::upstream_allocate
+  (const size_t size) noexcept {
   // If got here, we'll need to allocate from the upstream. First
   // determine the size we request
   size_t next_size = get_next_block_size();
   size_t next_allocation = ceil_allocation_size(next_size);
 
-  void* result;
   size_t allocation_size =
     next_allocation >= size ? next_allocation : ceil_allocation_size(size);
 
   for (;;) {
     const auto lbs_ref = make_mem_ref<thread_safety>(last_block_size_);
-
-    result = try_allocate(upstream_, allocation_size,
-                          nupp::maximum(alignment, _cfg.granularity));
+    const auto result =
+      try_allocate(upstream_, allocation_size, _cfg.granularity);
 
     if (result) {
       /* Update the next block since we allocated and it succeeded (we
        * won't bother with CAS here, this value is more of a
        * recommendation anyway) */
       lbs_ref.store(next_size, mo_t::relaxed);
-      return std::make_pair(result, allocation_size);
+      return head_block_t{ uintptr_t(result), allocation_size };
     }
     else if (allocation_size > next_allocation)
       // Do not update the lbs if the allocation was overly big
+      // (this only happens during the first iteration)
       return {};
 
     /* On failure, we can try to reduce the block size to a previous
      * value (unless it's smaller than the requested size) until it
      * reaches the allowed minimum */
     if (next_size == _cfg.min_block_size) {
-      // Only update if the regular alignment was requested, otherwise
-      // the failure may be due to it alone
-      if (alignment <= _cfg.granularity)
-        lbs_ref.store(0, mo_t::relaxed);  // Start from the beginning
-                                          // next time
+      lbs_ref.store(0, mo_t::relaxed);  // Start from the beginning
+                                        // next time
       return {};
     }
 
     next_size = get_prev_block_size(next_size);
     allocation_size = next_allocation = ceil_allocation_size(next_size);
     if (allocation_size < size) {  // Can't reduce that much
-      if (alignment <= _cfg.granularity)
-        lbs_ref.store(next_size, mo_t::relaxed);
+      lbs_ref.store(next_size, mo_t::relaxed);
       return {};
     }
   }
@@ -209,6 +209,18 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
   // pow2_t, so the check is easy)
   if (size % _cfg.granularity) [[unlikely]] return nullptr;
 
+  // Prepare some lambdas for the future
+  const auto align_ptr = [alignment](const uintptr_t ptr) {
+    const auto result = (ptr + alignment.get_mask()) & ~alignment.get_mask();
+    const auto padding = result - ptr;
+    return std::make_pair(result, padding);
+  };
+
+  const auto do_deallocate = [this](const uintptr_t ptr, const size_t size) {
+    if (size)
+      deallocate(reinterpret_cast<void*>(ptr), size, _cfg.granularity);
+  };
+
   /* Okay, now load the head. We will use two relaxed atomic reads
    * here, realizing we can end up loading values from different
    * blocks (in which case the first CAS will fix that) */
@@ -218,40 +230,48 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
   };
 
   for (;;) {
-    if (curr_head.size < size || curr_head.ptr % alignment)
-      break;  // We will need a direct allocation
-
+    const auto [result, padding] = align_ptr(curr_head.ptr);
     const head_block_t new_head = {
-      .ptr = curr_head.ptr + size,
-      .size = curr_head.size - size
+      .ptr = result + size,
+      .size = curr_head.size - size - padding
     };
+
+    if (new_head.ptr > curr_head.ptr + curr_head.size)
+      break;  // We will need a direct allocation
 
     if (make_mem_ref<thread_safety>(head_)
         .compare_exchange_weak(curr_head, new_head,
-                               mo_t::acquire, mo_t::relaxed))
+                               mo_t::acquire, mo_t::relaxed)) {
       // The easy and likely way out
-      return reinterpret_cast<void*>(curr_head.ptr);
+      do_deallocate(curr_head.ptr, padding);
+      return reinterpret_cast<void*>(result);
+    }
   }
 
   // If got here, we'll need to allocate from the upstream
-  const auto [result, allocation_size] = upstream_allocate(size, alignment);
-  if (!result) return nullptr;  // Couldn't allocate
+  const auto required_size = size +  // Also require max padding bytes
+    (alignment > _cfg.granularity ? (alignment - _cfg.granularity) : 0);
+
+  const auto new_head = upstream_allocate(required_size);
+  if (!new_head.size) return nullptr;  // Couldn't allocate
 
   // Try to install a new head if it has more free size left than the
   // current one
 
+  const auto [result, padding] = align_ptr(new_head.ptr);
+  do_deallocate(new_head.ptr, padding);
+
   const head_block_t next_head = {
-    .ptr = uintptr_t(result) + size,
-    .size = allocation_size - size
+    .ptr = result + size,
+    .size = new_head.size - size - padding
   };
 
   for (;;) {
     if (curr_head.size >= next_head.size) {
       // The head has more free space: mark the remaining allocated
       // block free
-      if (next_head.size)
-        deallocate(reinterpret_cast<void*>(next_head.ptr), next_head.size);
-      return result;
+      do_deallocate(next_head.ptr, next_head.size);
+      return reinterpret_cast<void*>(result);
     }
 
     // The allocated block has more free space: try to exchange
@@ -260,10 +280,8 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
                                mo_t::release, mo_t::relaxed)) {
       // If successful, marks free what's remaining of the old head
       // (if anything)
-      if (curr_head.size)
-        deallocate(reinterpret_cast<void*>(curr_head.ptr), curr_head.size);
-
-      return result;
+      do_deallocate(curr_head.ptr, curr_head.size);
+      return reinterpret_cast<void*>(result);
     }
   }
 }
