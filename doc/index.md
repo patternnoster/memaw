@@ -21,6 +21,7 @@ The library is still work in progress. See below for the list of features implem
 
 | Name | Description |
 |---|---|
+| [**cache_resource**](#cache_resource) | memory resource that allocates big blocks from an upstream resource and uses those blocks for (smaller) allocation requests |
 | [**chain_resource**](#chain_resource) | memory resource adaptor that sequentially tries every resource in a given list until a successful allocation |
 | [**os_resource**](#os_resource) | memory resource that always allocates and frees memory via direct system calls to the OS |
 | [**pages_resource**](#pages_resource) | a wrapper around [**os_resource**](#os_resource), allocating memory directly from the OS using pages of the statically specified size |
@@ -202,6 +203,52 @@ concept thread_safe_resource = resource<R> && enable_thread_safe_resource<R>;
 The concept of a resource whose methods can safely be called concurrently from different threads.
 
 To mark resource as thread_safe one has to specialize the constant [**enable_thread_safe_resource**](#enable_thread_safe_resource) to true. If then the above condition is not satisfied, the behaviour of the program is undefined.
+
+---
+
+### cache_resource
+<sub>Defined in header [&lt;memaw/cache_resource.hpp&gt;](/include/memaw/cache_resource.hpp)</sub>
+```c++
+template <cache_resource_config auto _config>
+class cache_resource;
+```
+Memory resource that allocates big blocks from an upstream resource and uses those blocks for (smaller) allocation requests. Memory is not freed until the resource is destructed (as in **std::pmr::monotonic_buffer_resource**).
+
+#### Member functions
+
+| Name | Description |
+|---|---|
+| [**allocate**](#cache_resourceallocate) | allocates memory from the cache, calling the upstream **allocate()** if there is not enough left |
+| [**cache_resource**](#cache_resourcecache_resource) | constructs the cache with the upstream resource default or move-constructed |
+| [**deallocate**](#cache_resourcedeallocate) | deallocates previously allocated memory (no call to the upstream here) |
+| [**guaranteed_alignment**](#cache_resourceguaranteed_alignment) | returns the minimal alignment of any address allocated by the cache if its configuration allows that |
+| [**min_size**](#cache_resourcemin_size) | returns the (configured) size of a minimum allocation: any allocation can only request a size that is a multiple of this value |
+| **operator==** | the equality comparison operator only returning true for same instances |
+| **~cache_resource** | calls **deallocate()** on the upstream resource for all previously deallocated cache memory |
+
+#### Member types
+
+| Name | Description |
+|---|---|
+| **upstream_t** | the configured type of the upstream resource |
+
+#### Constants
+
+| Name | Description |
+|---|---|
+| **config** | the resource config of type [**cache_resource_config_t**](#cache_resource_config_t) (template parameter) |
+| **is_granular** | enables [**granular_resource**](#granular_resource) |
+| **is_substitutable_for** | enables [**substitutable_resource_for**](#substitutable_resource_for) if the upstream resource is substitutable for the given one |
+| **is_sweeping** | enables [**sweeping_resource**](#sweeping_resource) |
+| **is_thread_safe** | enables [**thread_safe_resource**](#thread_safe_resource) if **config.thread_safe** is true |
+| **min_granularity** | the minimum value for the granularity parameter. Normally equals 32 bytes, always `>= alignof(std::max_align_t)` |
+
+#### Helper concepts and types
+
+| Name | Description |
+|---|---|
+| **cache_resource_config** | the concept of a set of configuration parameters of (template) type [**cache_resource_config_t**](#cache_resource_config_t) |
+| [**cache_resource_config_t**](#cache_resource_config_t) | configuration parameters for [**cache_resource**](#cache_resource) with valid defaults |
 
 ---
 
