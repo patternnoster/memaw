@@ -240,7 +240,7 @@ Memory resource that allocates big blocks from an upstream resource and uses tho
 | **is_granular** | enables [**granular_resource**](#granular_resource) |
 | **is_substitutable_for** | enables [**substitutable_resource_for**](#substitutable_resource_for) if the upstream resource is substitutable for the given one |
 | **is_sweeping** | enables [**sweeping_resource**](#sweeping_resource) |
-| **is_thread_safe** | enables [**thread_safe_resource**](#thread_safe_resource) if **config.thread_safe** is true |
+| **is_thread_safe** | enables [**thread_safe_resource**](#thread_safe_resource) if [**config.thread_safe**](#cache_resource_config_tthread_safe) is true |
 | **min_granularity** | the minimum value for the granularity parameter. Normally equals 32 bytes, always `>= alignof(std::max_align_t)` |
 
 #### Helper concepts and types
@@ -249,6 +249,65 @@ Memory resource that allocates big blocks from an upstream resource and uses tho
 |---|---|
 | **cache_resource_config** | the concept of a set of configuration parameters of (template) type [**cache_resource_config_t**](#cache_resource_config_t) |
 | [**cache_resource_config_t**](#cache_resource_config_t) | configuration parameters for [**cache_resource**](#cache_resource) with valid defaults |
+
+### cache_resource::allocate
+<sub>Defined in header [&lt;memaw/cache_resource.hpp&gt;](/include/memaw/cache_resource.hpp)</sub>
+```c++
+[[nodiscard]] void* allocate
+  (size_t size, size_t alignment = alignof(std::max_align_t)) noexcept;
+```
+Allocates memory from the cache, calling the upstream **allocate()** if there is not enough left.
+
+**Parameters**
+* `size` must be a multiple of the configured granularity
+* `alignment` must be a power of 2. If it is greater than the configured granularity, additional padding will be used
+
+---
+
+### cache_resource::cache_resource
+<sub>Defined in header [&lt;memaw/cache_resource.hpp&gt;](/include/memaw/cache_resource.hpp)</sub>
+```c++
+constexpr cache_resource()
+  noexcept(std::is_nothrow_default_constructible_v<upstream_t>)
+  requires(std::default_initializable<upstream_t>);
+```
+
+---
+
+<sub>Defined in header [&lt;memaw/cache_resource.hpp&gt;](/include/memaw/cache_resource.hpp)</sub>
+```c++
+constexpr cache_resource(upstream_t&& upstream)
+  noexcept(std::is_nothrow_move_constructible_v<upstream_t>);
+```
+
+---
+
+### cache_resource::deallocate
+<sub>Defined in header [&lt;memaw/cache_resource.hpp&gt;](/include/memaw/cache_resource.hpp)</sub>
+```c++
+void deallocate(void* ptr, size_t size,
+                size_t alignment = alignof(std::max_align_t)) noexcept;
+```
+Deallocates previously allocated memory. The **deallocate()** call on the upstream resource happens only on destruction.
+
+---
+
+### cache_resource::guaranteed_alignment
+<sub>Defined in header [&lt;memaw/cache_resource.hpp&gt;](/include/memaw/cache_resource.hpp)</sub>
+```c++
+constexpr static pow2_t guaranteed_alignment() noexcept
+  requires(config.granularity > alignof(std::max_align_t));
+```
+Returns the minimal alignment of any address allocated by the cache if its configuration allows that.
+
+---
+
+### cache_resource::min_size
+<sub>Defined in header [&lt;memaw/cache_resource.hpp&gt;](/include/memaw/cache_resource.hpp)</sub>
+```c++
+constexpr static pow2_t min_size() noexcept;
+```
+Returns the (configured) size of a minimum allocation: any allocation can only request a size that is a multiple of this value.
 
 ---
 
