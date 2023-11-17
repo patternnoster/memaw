@@ -9,7 +9,7 @@ The library is header-only. To install the headers along with the CMake configur
 cmake $SOURCE_PATH
 cmake --install . --prefix=$INSTALL_PATH
 ```
-The procedure will also install the header-only [nupp](https://github.com/patternnoster/nupp) library as a dependency.
+The procedure will also install the header-only [nupp](https://github.com/patternnoster/nupp) and [atomic128](https://github.com/patternnoster/atomic128) libraries as dependencies.
 
 ### Running the tests
 
@@ -20,3 +20,5 @@ cmake .. -DMEMAW_BUILD_TESTS=ON
 cmake --build .
 ctest
 ```
+
+Note that some thread-safe functions in this library are implemented using DWCAS, therefore it might be necessary to inform the compiler about the availability of this instruction on the target platform by passing a corresponding CXX flag (e.g., `-mcx16` or `-march=native`).
