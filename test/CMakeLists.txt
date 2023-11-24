@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.23)
 
 add_executable(memaw_tests
+  cache_resource_tests.cpp
   chain_resource_tests.cpp
   concepts_tests.cpp
   os_resource_tests.cpp
   pages_resource_tests.cpp
-  resource_tests.cpp
 )
 target_link_libraries(memaw_tests PRIVATE memaw gmock gtest_main)
 
