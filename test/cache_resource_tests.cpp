@@ -21,6 +21,68 @@ using namespace memaw;
 
 using testing::_;
 using testing::AtMost;
+using testing::Return;
+
+using cct_upstream1_t =
+  test_resource<resource_params{ .min_size = 4_KiB, .alignment = 8_KiB,
+                                 .is_sweeping = true, .group = {1, 1}}>;
+using cct_upstream2_t =
+  test_resource<resource_params{ .nothrow_alloc = true, .nothrow_dealloc = true,
+                                 .is_sweeping = true, .is_thread_safe = true }>;
+
+template <resource U>
+using cct_cache1_t =
+  cache_resource<cache_resource_config_t<U>{ .granularity = pow2_t{1_KiB} }>;
+
+template <resource U>
+using cct_cache2_t =
+  cache_resource<cache_resource_config_t<U>{ .granularity = pow2_t{32} }>;
+
+using cct_res1_t = cct_cache1_t<cct_upstream1_t>;
+using cct_res2_t = cct_cache1_t<cct_upstream2_t>;
+using cct_res3_t = cct_cache2_t<cct_upstream1_t>;
+using cct_res4_t = cct_cache2_t<cct_upstream2_t>;
+
+template <typename T>
+class CacheResourceConceptsTests: public testing::Test {};
+using CctCacheResources = testing::Types<cct_res1_t, cct_res2_t,
+                                         cct_res3_t, cct_res4_t>;
+TYPED_TEST_SUITE(CacheResourceConceptsTests, CctCacheResources);
+
+TYPED_TEST(CacheResourceConceptsTests, concepts) {
+  using upstream = TypeParam::upstream_t;
+
+  EXPECT_TRUE(resource<TypeParam>);
+  EXPECT_TRUE(nothrow_resource<TypeParam>);
+  EXPECT_TRUE(bound_resource<TypeParam>);
+  EXPECT_TRUE(granular_resource<TypeParam>);
+  EXPECT_TRUE(sweeping_resource<TypeParam>);
+
+  if constexpr (TypeParam::config.granularity > alignof(std::max_align_t)) {
+    EXPECT_TRUE(overaligning_resource<TypeParam>);
+    EXPECT_EQ(TypeParam::guaranteed_alignment(),
+              TypeParam::config.granularity.value);
+  }
+  else {
+    EXPECT_FALSE(overaligning_resource<TypeParam>);
+  }
+
+  if constexpr (std::same_as<upstream, cct_upstream1_t>) {
+    EXPECT_FALSE(thread_safe_resource<TypeParam>);
+    EXPECT_FALSE((substitutable_resource_for<TypeParam, cct_upstream2_t>));
+  }
+  else {
+    EXPECT_TRUE(thread_safe_resource<TypeParam>);
+    EXPECT_TRUE((substitutable_resource_for<TypeParam, cct_upstream2_t>));
+  }
+
+  EXPECT_FALSE((substitutable_resource_for<TypeParam, cct_res1_t>));
+  EXPECT_FALSE((substitutable_resource_for<TypeParam, cct_res2_t>));
+  EXPECT_FALSE((substitutable_resource_for<TypeParam, cct_res3_t>));
+  EXPECT_FALSE((substitutable_resource_for<TypeParam, cct_res4_t>));
+
+  EXPECT_TRUE((substitutable_resource_for<TypeParam, cct_upstream1_t>));
+}
 
 using upstream1_t =
   test_resource<resource_params{ .is_sweeping = true }>;
@@ -240,7 +302,7 @@ TYPED_TEST(CacheResourceTests, allocation_corner) {
   // First pre-allocate some blocks
   this->mock_upstream_alloc(blocks_count);
 
-  uintptr_t end;
+  uintptr_t end = 0;
   while (this->allocations.size() < blocks_count) {
     const auto [size, alignment] = this->get_rand_alloc();
 
