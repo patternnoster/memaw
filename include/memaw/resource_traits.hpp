@@ -73,6 +73,23 @@ struct resource_traits {
   template <resource T>
   constexpr static bool is_substitutable_for =
     substitutable_resource_for<R, T>;
+
+  /**
+   * @brief Gets the minimum allocation size limit for the resource
+   **/
+  constexpr static size_t min_size() noexcept {
+    if constexpr (is_bound) return R::min_size();
+    else return 0;
+  }
+
+  /**
+   * @brief Gets the minimum alignment of every allocation by the
+   *        resource
+   **/
+  constexpr static pow2_t guaranteed_alignment() noexcept {
+    if constexpr (is_overaligning) return R::guaranteed_alignment();
+    else return pow2_t { alignof(std::max_align_t), pow2_t::exact };
+  }
 };
 
 } // namespace memaw
