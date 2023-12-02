@@ -1,6 +1,8 @@
 #pragma once
 #include "concepts.hpp"
 
+#include "__detail/resource_traits_impl.hpp"
+
 /**
  * @file
  * Unified interfaces to resource concepts and allocation methods
@@ -80,6 +82,19 @@ struct resource_traits {
   constexpr static size_t min_size() noexcept {
     if constexpr (is_bound) return R::min_size();
     else return 0;
+  }
+
+  /**
+   * @brief Returns the minimum allocation size that can be requested
+   *        from the resource and is not less than the provided
+   *        argument
+   *
+   * If R models granular_resource, returns the next (>=) multiple of
+   * R::min_size(). If R is bound, returns R::min_size() if `size` is
+   * less than it. Otherwise returns `size` unchanged.
+   **/
+  constexpr static size_t ceil_allocation_size(const size_t size) noexcept {
+    return __detail::ceil_allocation_size_impl<R>(size);
   }
 
   /**
