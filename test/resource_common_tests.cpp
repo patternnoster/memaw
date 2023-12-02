@@ -41,6 +41,10 @@ TEST(ResourceTraitsTests, concepts) {
   EXPECT_FALSE(traits1_t::is_granular);
   EXPECT_TRUE(traits2_t::is_granular);
 
+  EXPECT_EQ(traits1_t::ceil_allocation_size(42), 42);
+  EXPECT_EQ(traits2_t::ceil_allocation_size(42), 1024);
+  EXPECT_EQ(traits2_t::ceil_allocation_size(1025), 2048);
+
   EXPECT_TRUE(traits1_t::is_sweeping);
   EXPECT_FALSE(traits2_t::is_sweeping);
 
