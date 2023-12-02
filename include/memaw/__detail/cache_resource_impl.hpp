@@ -3,6 +3,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "../resource_traits.hpp"
 #include "concepts_impl.hpp"
 #include "mem_ref.hpp"
 
@@ -99,22 +100,6 @@ private:
     }
   }
 
-  /**
-   * @brief Returns the next smallest allocation size that is valid
-   *        for the upstream (i.e., is not less than its min_size(),
-   *        if it's bound, and a multiple of it if it's granular)
-   **/
-  static size_t ceil_allocation_size(const size_t size) noexcept {
-    if constexpr (granular_resource<upstream_t>) {
-      const auto ups_min_size = upstream_t::min_size();
-      const auto remainder = size % ups_min_size;
-      return size + (remainder > 0) * (ups_min_size - remainder);
-    }
-    else if constexpr (bound_resource<upstream_t>)
-      return nupp::maximum(size, upstream_t::min_size());
-    else return size;
-  }
-
   void copy_internals(const cache_resource_impl& rhs) noexcept {
     head_ = rhs.head_;
     free_chunks_head_ = rhs.free_chunks_head_;
@@ -159,13 +144,15 @@ public:
 template <auto _cfg>
 head_block_t cache_resource_impl<_cfg>::upstream_allocate
   (const size_t size) noexcept {
+  using traits = resource_traits<upstream_t>;
+
   // If got here, we'll need to allocate from the upstream. First
   // determine the size we request
   size_t next_size = get_next_block_size();
-  size_t next_allocation = ceil_allocation_size(next_size);
+  size_t next_allocation = traits::ceil_allocation_size(next_size);
 
-  size_t allocation_size =
-    next_allocation >= size ? next_allocation : ceil_allocation_size(size);
+  size_t allocation_size = next_allocation >= size
+    ? next_allocation : traits::ceil_allocation_size(size);
 
   for (;;) {
     const auto lbs_ref = make_mem_ref<thread_safety>(last_block_size_);
@@ -194,7 +181,7 @@ head_block_t cache_resource_impl<_cfg>::upstream_allocate
     }
 
     next_size = get_prev_block_size(next_size);
-    allocation_size = next_allocation = ceil_allocation_size(next_size);
+    allocation_size = next_allocation = traits::ceil_allocation_size(next_size);
     if (allocation_size < size) {  // Can't reduce that much
       lbs_ref.store(next_size, mo_t::relaxed);
       return {};
