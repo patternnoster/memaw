@@ -32,6 +32,30 @@ constexpr static size_t ceil_allocation_size_impl(const size_t size) noexcept {
   else return size;
 }
 
+#ifdef __cpp_exceptions
+template <typename R, typename... Args>
+inline void* try_allocate(R& resource, const Args... args) noexcept
+  requires (!has_nothrow_allocate<R>) try {
+    return resource.allocate(args...);
+  } catch (...) { return nullptr; }
+
+template <typename R, typename... Args>
+inline void try_deallocate(R& resource, const Args... args) noexcept
+  requires (!has_nothrow_deallocate<R>) try {
+    resource.deallocate(args...);
+  } catch (...) {}
+#endif
+
+template <typename R, typename... Args>
+inline void* try_allocate(R& resource, const Args... args) noexcept {
+  return resource.allocate(args...);
+}
+
+template <typename R, typename... Args>
+inline void try_deallocate(R& resource, const Args... args) noexcept {
+  resource.deallocate(args...);
+}
+
 template <auto _policy, bool _original>
 constexpr static bool is_nothrow_with = _policy == decltype(_policy)::nothrow
   || (_policy == decltype(_policy)::original && _original);

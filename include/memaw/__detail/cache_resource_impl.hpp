@@ -4,7 +4,6 @@
 #include <utility>
 
 #include "../resource_traits.hpp"
-#include "concepts_impl.hpp"
 #include "mem_ref.hpp"
 
 /**
@@ -156,8 +155,8 @@ head_block_t cache_resource_impl<_cfg>::upstream_allocate
 
   for (;;) {
     const auto lbs_ref = make_mem_ref<thread_safety>(last_block_size_);
-    const auto result =
-      try_allocate(upstream_, allocation_size, _cfg.granularity);
+    const auto result = memaw::allocate<exceptions_policy::nothrow>
+      (upstream_, allocation_size, _cfg.granularity);
 
     if (result) {
       /* Update the next block since we allocated and it succeeded (we

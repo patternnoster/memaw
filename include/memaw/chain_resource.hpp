@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "concepts.hpp"
+#include "resource_traits.hpp"
 
 #include "__detail/chain_resource_impl.hpp"
 
@@ -129,8 +130,8 @@ public:
     return std::apply([size, alignment](Rs&... resources) {
       std::pair<void*, size_t> result{ nullptr, size_t(-1) };
       ((++result.second,
-        result.first = __detail::try_allocate(resources,
-                                              size, alignment)) || ...);
+        result.first = memaw::allocate<exceptions_policy::nothrow>
+          (resources, size, alignment)) || ...);
       return result;
     }, resources_);
   }
