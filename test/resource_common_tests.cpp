@@ -57,3 +57,41 @@ TEST(ResourceTraitsTests, concepts) {
   EXPECT_TRUE(traits1_t::is_thread_safe);
   EXPECT_FALSE(traits2_t::is_thread_safe);
 }
+
+TEST(ResourceTraitsTests, free_functions) {
+  mock_resource non_throwing_mock, throwing_mock;
+  common_res1_t res1{non_throwing_mock};
+  common_res2_t res2{non_throwing_mock};
+  common_res2_t res3{throwing_mock};
+
+  EXPECT_CALL(non_throwing_mock, allocate(_, _)).Times(4)
+    .WillRepeatedly(Return(nullptr));
+
+  EXPECT_CALL(non_throwing_mock, deallocate(_, _, _)).Times(2);
+
+  EXPECT_EQ((allocate<exceptions_policy::original>(res1, 42)), nullptr);
+  EXPECT_EQ((allocate<exceptions_policy::nothrow>(res1, 42, 1024)), nullptr);
+
+  deallocate<exceptions_policy::nothrow>(res2, nullptr, 42);
+  deallocate<exceptions_policy::original>(res2, nullptr, 42, 1024);
+
+  EXPECT_THROW(((void)allocate<exceptions_policy::throw_bad_alloc>(res1, 42)),
+               std::bad_alloc);
+  EXPECT_THROW(((void)allocate<exceptions_policy::throw_bad_alloc>(res2, 42)),
+               std::bad_alloc);
+
+  EXPECT_CALL(throwing_mock, allocate(_, _)).Times(3)
+    .WillRepeatedly([] (auto...) -> void* { throw 42; });
+  EXPECT_CALL(throwing_mock, deallocate(_, _, _)).Times(2)
+    .WillRepeatedly([] (auto...) { throw 42; });
+
+  EXPECT_THROW(((void)allocate<exceptions_policy::original>(res3, 42)), int);
+  EXPECT_THROW(((void)allocate<exceptions_policy::throw_bad_alloc>(res3, 42)),
+               int);
+
+  EXPECT_THROW((deallocate<exceptions_policy::original>(res3, nullptr, 42)),
+               int);
+
+  EXPECT_EQ((allocate<exceptions_policy::nothrow>(res3, 42)), nullptr);
+  deallocate<exceptions_policy::nothrow>(res3, nullptr, 42);
+}
