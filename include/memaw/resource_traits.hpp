@@ -107,4 +107,44 @@ struct resource_traits {
   }
 };
 
+/**
+ * @brief Specifies the requested exceptions policy for the global
+ *        allocate()/deallocate() calls
+ **/
+enum class exceptions_policy {
+  original,
+  nothrow,
+  throw_bad_alloc
+};
+
+/**
+ * @brief Allocates memory from the given resource with the chosen
+ *        exception policy. The parameters are forwarded to the
+ *        R::allocate() call directly
+ **/
+template <exceptions_policy _policy = exceptions_policy::original,
+          resource R>
+[[nodiscard]] inline void* allocate
+  (R& resource,
+   const size_t size, const size_t alignment = alignof(std::max_align_t))
+  noexcept(__detail::is_nothrow_with<_policy,
+                                     __detail::has_nothrow_allocate<R>>) {
+  return __detail::allocate_impl<_policy>(resource, size, alignment);
+}
+
+/**
+ * @brief Deallocates memory to the given resource with the chosen
+ *        exception policy. The parameters are forwarded to the
+ *        R::deallocate() call directly
+ **/
+template <exceptions_policy _policy = exceptions_policy::original,
+          resource R>
+  requires (_policy != exceptions_policy::throw_bad_alloc)
+inline void deallocate(R& resource, void* const ptr, const size_t size,
+                       const size_t alignment = alignof(std::max_align_t))
+  noexcept(__detail::is_nothrow_with<_policy,
+                                     __detail::has_nothrow_deallocate<R>>) {
+  __detail::deallocate_impl<_policy>(resource, ptr, size, alignment);
+}
+
 } // namespace memaw

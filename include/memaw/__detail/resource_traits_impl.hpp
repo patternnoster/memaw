@@ -32,4 +32,21 @@ constexpr static size_t ceil_allocation_size_impl(const size_t size) noexcept {
   else return size;
 }
 
+template <auto _policy, bool _original>
+constexpr static bool is_nothrow_with = _policy == decltype(_policy)::nothrow
+  || (_policy == decltype(_policy)::original && _original);
+
+template <auto _policy, resource R>
+[[nodiscard]] inline void* allocate_impl(R& resource, const size_t size,
+                                         const size_t alignment)
+  noexcept(is_nothrow_with<_policy, has_nothrow_allocate<R>>) {
+  return nullptr;
+}
+
+template <auto _policy, resource R>
+inline void deallocate_impl(R& resource, void* const ptr,
+                            const size_t size, const size_t alignment)
+  noexcept(is_nothrow_with<_policy, has_nothrow_deallocate<R>>) {
+}
+
 } // namespace memaw::__detail
