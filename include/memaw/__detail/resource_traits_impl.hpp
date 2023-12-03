@@ -40,13 +40,33 @@ template <auto _policy, resource R>
 [[nodiscard]] inline void* allocate_impl(R& resource, const size_t size,
                                          const size_t alignment)
   noexcept(is_nothrow_with<_policy, has_nothrow_allocate<R>>) {
-  return nullptr;
+  using policy_t = decltype(_policy);
+
+  if constexpr (_policy == policy_t::nothrow)
+    return try_allocate(resource, size, alignment);
+  else {
+    const auto result = resource.allocate(size, alignment);
+#ifdef __cpp_exceptions
+    if constexpr (_policy == policy_t::throw_bad_alloc)
+      if (!result)
+        throw std::bad_alloc{};
+#else
+    static_assert(_policy == exception_policy::throw_bad_alloc,
+                  "The force exceptions policy has been selected "
+                  "but exceptions are disabled");
+#endif
+    return result;
+  }
 }
 
 template <auto _policy, resource R>
 inline void deallocate_impl(R& resource, void* const ptr,
                             const size_t size, const size_t alignment)
   noexcept(is_nothrow_with<_policy, has_nothrow_deallocate<R>>) {
+  if constexpr (_policy == decltype(_policy)::nothrow)
+    try_deallocate(resource, ptr, size, alignment);
+  else
+    resource.deallocate(ptr, size, alignment);
 }
 
 } // namespace memaw::__detail
