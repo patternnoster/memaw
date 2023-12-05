@@ -147,4 +147,31 @@ inline void deallocate(R& resource, void* const ptr, const size_t size,
   __detail::deallocate_impl<_policy>(resource, ptr, size, alignment);
 }
 
+/**
+ * @brief The structure used to return resource allocation result of
+ *        the implementation defined real size (e.g. from
+ *        allocate_at_least())
+ **/
+struct allocation_result {
+  void* ptr;
+  size_t size;
+};
+
+/**
+ * @brief Allocates memory from the given resource with the chosen
+ *        exception policy, while increasing the requested size if
+ *        necessary (using resource_traits<R>::ceil_allocation_size())
+ **/
+template <exceptions_policy _policy = exceptions_policy::original,
+          resource R>
+[[nodiscard]] inline allocation_result allocate_at_least
+  (R& resource, const size_t size,
+   const size_t alignment = alignof(std::max_align_t))
+  noexcept(__detail::is_nothrow_with<_policy,
+                                     __detail::has_nothrow_allocate<R>>) {
+  const auto real_size = resource_traits<R>::ceil_allocation_size(size);
+  return { .ptr = allocate<_policy>(resource, real_size, alignment),
+           .size = real_size };
+}
+
 } // namespace memaw
