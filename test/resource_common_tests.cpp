@@ -64,7 +64,7 @@ TEST(ResourceTraitsTests, free_functions) {
   common_res2_t res2{non_throwing_mock};
   common_res2_t res3{throwing_mock};
 
-  EXPECT_CALL(non_throwing_mock, allocate(_, _)).Times(4)
+  EXPECT_CALL(non_throwing_mock, allocate(_, _)).Times(5)
     .WillRepeatedly(Return(nullptr));
 
   EXPECT_CALL(non_throwing_mock, deallocate(_, _, _)).Times(2);
@@ -75,12 +75,15 @@ TEST(ResourceTraitsTests, free_functions) {
   deallocate<exceptions_policy::nothrow>(res2, nullptr, 42);
   deallocate<exceptions_policy::original>(res2, nullptr, 42, 1024);
 
+  const auto al_res = allocate_at_least<exceptions_policy::nothrow>(res2, 42);
+  EXPECT_EQ(al_res.size, 1024);
+
   EXPECT_THROW(((void)allocate<exceptions_policy::throw_bad_alloc>(res1, 42)),
                std::bad_alloc);
   EXPECT_THROW(((void)allocate<exceptions_policy::throw_bad_alloc>(res2, 42)),
                std::bad_alloc);
 
-  EXPECT_CALL(throwing_mock, allocate(_, _)).Times(3)
+  EXPECT_CALL(throwing_mock, allocate(_, _)).Times(4)
     .WillRepeatedly([] (auto...) -> void* { throw 42; });
   EXPECT_CALL(throwing_mock, deallocate(_, _, _)).Times(2)
     .WillRepeatedly([] (auto...) { throw 42; });
@@ -94,4 +97,8 @@ TEST(ResourceTraitsTests, free_functions) {
 
   EXPECT_EQ((allocate<exceptions_policy::nothrow>(res3, 42)), nullptr);
   deallocate<exceptions_policy::nothrow>(res3, nullptr, 42);
+
+  const auto al_res2 = allocate_at_least<exceptions_policy::nothrow>(res3, 42);
+  EXPECT_EQ(al_res2.ptr, nullptr);
+  EXPECT_EQ(al_res2.size, 1024);
 }
