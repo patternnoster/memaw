@@ -34,6 +34,12 @@ The library is still work in progress. See below for the list of features implem
 | [**fixed_pages_resource**](#fixed_pages_resource) | a resource that allocates pages of the given fixed size directly from the OS |
 | [**regular_pages_resource**](#regular_pages_resource) | a resource that allocates pages of regular system size directly from the OS |
 
+### Traits
+
+| Name | Description |
+|---|---|
+| [**resource_traits**](#resource_traits) | a structure containing traits for memory resource concepts defined by this library |
+
 ### Helper concepts and types
 
 | Name | Description |
@@ -784,6 +790,17 @@ Get the minimum alignment every allocated address has.
 
 ---
 
+### pages_resource::min_size
+<sub>Defined in header [&lt;memaw/pages_resource.hpp&gt;](/include/memaw/pages_resource.hpp)</sub>
+```c++
+constexpr static pow2_t min_size() noexcept requires(explicit_size);
+
+static pow2_t min_size() noexcept requires(!explicit_size);
+```
+Get the minimum allocation size for this resource.
+
+---
+
 ### big_pages_resource
 <sub>Defined in header [&lt;memaw/pages_resource.hpp&gt;](/include/memaw/pages_resource.hpp)</sub>
 ```c++
@@ -812,14 +829,34 @@ A resource that allocates pages of regular system size directly from the OS (sam
 
 ---
 
-### pages_resource::min_size
-<sub>Defined in header [&lt;memaw/pages_resource.hpp&gt;](/include/memaw/pages_resource.hpp)</sub>
+### resource_traits
+<sub>Defined in header [&lt;memaw/resource_traits.hpp&gt;](/include/memaw/resource_traits.hpp)</sub>
 ```c++
-constexpr static pow2_t min_size() noexcept requires(explicit_size);
-
-static pow2_t min_size() noexcept requires(!explicit_size);
+template <resource R>
+struct resource_traits;
 ```
-Get the minimum allocation size for this resource.
+A structure containing traits for memory resource concepts defined by this library.
+
+#### Constants
+
+| Name | Description |
+|---|---|
+| **is_bound** | true iff the resource has a minimal allocation size limit (see the [**bound_resource**](#bound_resource) concept for details) |
+| **is_granular** | true iff the resource can only allocate multiples of its minimum allocation size (see the [**granular_resource**](#granular_resource) concept for details) |
+| **is_interchangeable_with** | true iff the resource and the provided one can always safely deallocate memory allocated by the other (see the [**interchangeable_resource_with**](#interchangeable_resource_with) concept for details) |
+| **is_nothrow** | true iff the resource's methods don't throw exceptions (see the [**nothrow_resource**](#nothrow_resource) concept for details) |
+| **is_overaligning** | true iff the resource has a guaranteed alignment more than `alignof(std::max_align_t)` (see the [**overaligning_resource**](#overaligning_resource) concept for details) |
+| **is_substitutable_for** | true iff the resource can safely deallocate all memory allocated by any particalar instance of the provided one (see the [**substitutable_resource_for**](#substitutable_resource_for) concept for details) |
+| **is_sweeping** | true iff the resource can deallocate adjacent regions with a single call (see the [**sweeping_resource**](#sweeping_resource) concept for details) |
+| **is_thread_safe** | true iff the resource is thread safe (see the [**thread_safe_resource**](#thread_safe_resource) concept for details) |
+
+#### Member functions
+
+| Name | Description |
+|---|---|
+| [**ceil_allocation_size**](#resource_traitsceil_allocation_size) | returns the minimum allocation size that can be requested from the resource and is not less than the provided argument |
+| [**guaranteed_alignment**](#resource_traitsguaranteed_alignment) | gets the minimum alignment of every allocation by the resource |
+| [**min_size**](#resource_traitsmin_size) | gets the minimum allocation size limit for the resource |
 
 ---
 
