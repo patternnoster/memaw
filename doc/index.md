@@ -858,6 +858,33 @@ A structure containing traits for memory resource concepts defined by this libra
 | [**guaranteed_alignment**](#resource_traitsguaranteed_alignment) | gets the minimum alignment of every allocation by the resource |
 | [**min_size**](#resource_traitsmin_size) | gets the minimum allocation size limit for the resource |
 
+### resource_traits::ceil_allocation_size
+<sub>Defined in header [&lt;memaw/resource_traits.hpp&gt;](/include/memaw/resource_traits.hpp)</sub>
+```c++
+constexpr static size_t ceil_allocation_size(size_t size) noexcept;
+```
+Returns the minimum allocation size that can be requested from the resource and is not less than the provided argument.
+
+If R models [**granular_resource**](#granular_resource), returns the next (>=) multiple of **R::min_size()**. If R is bound, returns **R::min_size()** if size is less than it. Otherwise returns size unchanged.
+
+---
+
+### resource_traits::guaranteed_alignment
+<sub>Defined in header [&lt;memaw/resource_traits.hpp&gt;](/include/memaw/resource_traits.hpp)</sub>
+```c++
+constexpr static pow2_t guaranteed_alignment() noexcept;
+```
+Gets the minimum alignment of every allocation by the resource.
+
+---
+
+### resource_traits::min_size
+<sub>Defined in header [&lt;memaw/resource_traits.hpp&gt;](/include/memaw/resource_traits.hpp)</sub>
+```c++
+constexpr static size_t min_size() noexcept;
+```
+Gets the minimum allocation size limit for the resource.
+
 ---
 
 ### enable_granular_resource
