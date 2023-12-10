@@ -40,10 +40,20 @@ The library is still work in progress. See below for the list of features implem
 |---|---|
 | [**resource_traits**](#resource_traits) | a structure containing traits for memory resource concepts defined by this library |
 
+### Functions
+
+| Name | Description |
+|---|---|
+| [**allocate**](#allocate) | allocates memory from the given resource with the chosen exception policy |
+| [**allocate_at_least**](#allocate_at_least) | allocates memory from the given resource with the chosen exception policy, while increasing the requested size if necessary |
+| [**deallocate**](#deallocate) | deallocates memory to the given resource with the chosen exception policy |
+
 ### Helper concepts and types
 
 | Name | Description |
 |---|---|
+| [**allocation_result**](#allocation_result) | the structure used to return resource allocation result of the implementation defined real size (e.g. from [**allocate_at_least()**](#allocate_at_least)) |
+| [**exceptions_policy**](#exceptions_policy) | specifies the requested exceptions policy for the global [**allocate()**](#allocate)/[**deallocate()**](#deallocate) calls |
 | [**page_type**](#page_type) | the concept of a type that denotes the size of a system memory page and must be either one of the tags in [**page_types**](#page_types) or **pow2_t** for explicit size specification |
 | [**page_types**](#page_types) | tags for the types of system memory pages available for allocation |
 
@@ -701,6 +711,35 @@ Returns the known minimum size limit for allocations with the specified page typ
 * for [**page_types::regular**](#page_typesregular), [**get_page_size()**](#os_resourceget_page_size);
 * for [**page_types::big**](#page_typesbig), [**get_big_page_size()**](#os_resourceget_big_page_size) if it's defined, or of [**get_page_size()**](#os_resourceget_page_size) if it's not;
 * for explicitly specified page size, its value.
+
+---
+
+### allocation_result
+<sub>Defined in header [&lt;memaw/resource_traits.hpp&gt;](/include/memaw/resource_traits.hpp)</sub>
+```c++
+struct allocation_result {
+  void* ptr;
+  size_t size;
+};
+```
+The structure used to return resource allocation result of the implementation defined real size (e.g. from [**allocate_at_least()**](#allocate_at_least)).
+
+---
+
+### exceptions_policy
+<sub>Defined in header [&lt;memaw/resource_traits.hpp&gt;](/include/memaw/resource_traits.hpp)</sub>
+```c++
+enum class exceptions_policy;
+```
+Specifies the requested exceptions policy for the global [**allocate()**](#allocate)/[**deallocate()**](#deallocate) calls.
+
+#### Enumerators
+
+| Name | Description |
+|---|---|
+| **original** | preserve the original exceptions policy of the resource |
+| **nothrow** | suppress exceptions that may be thrown by the resource |
+| **throw_bad_alloc** | (allocation only) force throw `std::bad_alloc` if the resource returns **nullptr** |
 
 ---
 
