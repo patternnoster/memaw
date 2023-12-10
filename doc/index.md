@@ -926,6 +926,43 @@ Gets the minimum allocation size limit for the resource.
 
 ---
 
+### allocate
+<sub>Defined in header [&lt;memaw/resource_traits.hpp&gt;](/include/memaw/resource_traits.hpp)</sub>
+```c++
+template <exceptions_policy _policy = exceptions_policy::original, resource R>
+[[nodiscard]] inline void* allocate
+  (R& resource, size_t size, size_t alignment = alignof(std::max_align_t))
+  noexcept(__detail::is_nothrow_with<_policy, __detail::has_nothrow_allocate<R>>);
+```
+Allocates memory from the given resource with the chosen exception policy. The parameters are forwarded to the **R::allocate()** call directly.
+
+---
+
+### allocate_at_least
+<sub>Defined in header [&lt;memaw/resource_traits.hpp&gt;](/include/memaw/resource_traits.hpp)</sub>
+```c++
+template <exceptions_policy _policy = exceptions_policy::original, resource R>
+[[nodiscard]] inline allocation_result allocate_at_least
+  (R& resource, size_t size, size_t alignment = alignof(std::max_align_t))
+  noexcept(__detail::is_nothrow_with<_policy, __detail::has_nothrow_allocate<R>>);
+```
+Allocates memory from the given resource with the chosen exception policy, while increasing the requested size if necessary (using **resource_traits::**[**ceil_allocation_size()**](#resource_traitsceil_allocation_size)).
+
+---
+
+### deallocate
+<sub>Defined in header [&lt;memaw/resource_traits.hpp&gt;](/include/memaw/resource_traits.hpp)</sub>
+```c++
+template <exceptions_policy _policy = exceptions_policy::original, resource R>
+  requires (_policy != exceptions_policy::throw_bad_alloc)
+inline void deallocate(R& resource, void* ptr, size_t size,
+                       size_t alignment = alignof(std::max_align_t))
+  noexcept(__detail::is_nothrow_with<_policy, __detail::has_nothrow_deallocate<R>>);
+```
+Deallocates memory to the given resource with the chosen exception policy. The parameters are forwarded to the **R::deallocate()** call directly.
+
+---
+
 ### enable_granular_resource
 <sub>Defined in header [&lt;memaw/concepts.hpp&gt;](/include/memaw/concepts.hpp)</sub>
 ```c++
