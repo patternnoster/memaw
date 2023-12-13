@@ -125,7 +125,8 @@ public:
 
   constexpr static bool is_granular = true;
   constexpr static bool is_sweeping = true;
-  constexpr static bool is_thread_safe = thread_safe_resource<upstream_t>;
+  constexpr static bool is_thread_safe =
+    _config.thread_safe && thread_safe_resource<upstream_t>;
 
   template <resource R>
   constexpr static bool is_substitutable_for =
