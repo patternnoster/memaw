@@ -5,6 +5,7 @@
 
 #include "../resource_traits.hpp"
 #include "mem_ref.hpp"
+#include "resource_common.hpp"
 
 /**
  * @file
@@ -196,12 +197,6 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
   if (size % _cfg.granularity) [[unlikely]] return nullptr;
 
   // Prepare some lambdas for the future
-  const auto align_ptr = [alignment](const uintptr_t ptr) {
-    const auto result = (ptr + alignment.get_mask()) & ~alignment.get_mask();
-    const auto padding = result - ptr;
-    return std::make_pair(result, padding);
-  };
-
   const auto do_deallocate = [this](const uintptr_t ptr, const size_t size) {
     if (size)
       deallocate(reinterpret_cast<void*>(ptr), size, _cfg.granularity);
@@ -216,7 +211,7 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
   };
 
   for (;;) {
-    const auto [result, padding] = align_ptr(curr_head.ptr);
+    const auto [result, padding] = align_pointer(curr_head.ptr, alignment);
     const head_block_t new_head = {
       .ptr = result + size,
       .size = curr_head.size - size - padding
@@ -244,7 +239,7 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
   // Try to install a new head if it has more free size left than the
   // current one
 
-  const auto [result, padding] = align_ptr(new_head.ptr);
+  const auto [result, padding] = align_pointer(new_head.ptr, alignment);
   do_deallocate(new_head.ptr, padding);
 
   const head_block_t next_head = {
