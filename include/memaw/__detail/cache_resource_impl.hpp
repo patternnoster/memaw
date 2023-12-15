@@ -196,12 +196,6 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
   // pow2_t, so the check is easy)
   if (size % _cfg.granularity) [[unlikely]] return nullptr;
 
-  // Prepare some lambdas for the future
-  const auto do_deallocate = [this](const uintptr_t ptr, const size_t size) {
-    if (size)
-      deallocate(reinterpret_cast<void*>(ptr), size, _cfg.granularity);
-  };
-
   /* Okay, now load the head. We will use two relaxed atomic reads
    * here, realizing we can end up loading values from different
    * blocks (in which case the first CAS will fix that) */
@@ -224,7 +218,7 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
         .compare_exchange_weak(curr_head, new_head,
                                mo_t::acquire, mo_t::relaxed)) {
       // The easy and likely way out
-      do_deallocate(curr_head.ptr, padding);
+      deallocate(reinterpret_cast<void*>(curr_head.ptr), padding);
       return reinterpret_cast<void*>(result);
     }
   }
@@ -240,7 +234,7 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
   // current one
 
   const auto [result, padding] = align_pointer(new_head.ptr, alignment);
-  do_deallocate(new_head.ptr, padding);
+  deallocate(reinterpret_cast<void*>(new_head.ptr), padding);
 
   const head_block_t next_head = {
     .ptr = result + size,
@@ -251,7 +245,7 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
     if (curr_head.size >= next_head.size) {
       // The head has more free space: mark the remaining allocated
       // block free
-      do_deallocate(next_head.ptr, next_head.size);
+      deallocate(reinterpret_cast<void*>(next_head.ptr), next_head.size);
       return reinterpret_cast<void*>(result);
     }
 
@@ -261,7 +255,7 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
                                mo_t::release, mo_t::relaxed)) {
       // If successful, marks free what's remaining of the old head
       // (if anything)
-      do_deallocate(curr_head.ptr, curr_head.size);
+      deallocate(reinterpret_cast<void*>(curr_head.ptr), curr_head.size);
       return reinterpret_cast<void*>(result);
     }
   }
@@ -350,7 +344,9 @@ cache_resource_impl<_cfg>::~cache_resource_impl() noexcept {
     free_chunk_t curr_chunk = *region;
     region->~free_chunk_t();
 
-    try_deallocate(upstream_, region, curr_chunk.size, curr_chunk.alignment);
+    memaw::deallocate<exceptions_policy::nothrow>
+      (upstream_, region, curr_chunk.size, curr_chunk.alignment);
+
     region = curr_chunk.next;
   }
 }
