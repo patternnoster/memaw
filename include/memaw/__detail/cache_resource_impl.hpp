@@ -286,61 +286,18 @@ cache_resource_impl<_cfg>::~cache_resource_impl() noexcept {
   /* The chunks in the free list are obviously out of order, so we
    * find andjacent ones here. Luckily, this is the destructor so
    * we don't have to think about thread safety */
-  free_chunk_t* regions;  // Sorted processed part
+  free_chunk_t* chunks_head =
+    make_mem_ref<thread_safety>(free_chunks_head_).load(mo_t::acquire);
 
   if (head_.size)  // "deallocate" head
-    regions = new (reinterpret_cast<void*>(head_.ptr)) free_chunk_t {
-      .next = nullptr,
+    chunks_head = new (reinterpret_cast<void*>(head_.ptr)) free_chunk_t {
+      .next = chunks_head,
       .size = head_.size,
       .alignment = pow2_t{}
     };
-  else regions = nullptr;
 
-  for (auto chunk = make_mem_ref<thread_safety>(free_chunks_head_)
-         .load(mo_t::acquire); chunk;) {
-    const auto chunk_begin = uintptr_t(chunk);
-    const auto chunk_end = chunk_begin + chunk->size;
-
-    const auto next_chunk = chunk->next;
-
-    // This works like insertion sort, only we merge the adjacent
-    // regions together
-    free_chunk_t* prev_region = nullptr;  // null or < chunk_begin
-    free_chunk_t* next_region = regions;  // null or > chunk_begin
-    while (next_region && chunk_begin > uintptr_t(next_region)) {
-      prev_region = next_region;
-      next_region = next_region->next;
-    }
-
-    // We either put chunk between prev and next or merge 2 or 3 of
-    // them together
-
-    if (uintptr_t(next_region) == chunk_end) {
-      // Merge with next (never 0 here)
-      chunk->size+= next_region->size;
-      chunk->next = next_region->next;
-      next_region->~free_chunk_t();
-    }
-    else chunk->next = next_region;
-
-    if (prev_region) {
-      const auto prev_region_end = uintptr_t(prev_region) + prev_region->size;
-
-      if (prev_region_end == chunk_begin) {
-        // Merge with prev
-        prev_region->size+= chunk->size;
-        prev_region->next = chunk->next;
-        chunk->~free_chunk_t();
-      }
-      else prev_region->next = chunk;
-    }
-    else regions = chunk;
-
-    chunk = next_chunk;
-  }
-
-  // Finally pass merged adjacent regions to deallocate()
-  for (auto region = regions; region;) {
+  // Merge adjacent regions and pass them to deallocate()
+  for (auto region = merge_chunks(chunks_head); region;) {
     free_chunk_t curr_chunk = *region;
     region->~free_chunk_t();
 
