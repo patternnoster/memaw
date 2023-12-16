@@ -30,13 +30,13 @@ using cct_upstream2_t =
   test_resource<resource_params{ .nothrow_alloc = true, .nothrow_dealloc = true,
                                  .is_sweeping = true, .is_thread_safe = true }>;
 
-template <resource U>
+template <resource R>
 using cct_cache1_t =
-  cache_resource<cache_resource_config_t<U>{ .granularity = pow2_t{1_KiB} }>;
+  cache_resource<R, cache_resource_config{ .granularity = pow2_t{1_KiB} }>;
 
-template <resource U>
+template <resource R>
 using cct_cache2_t =
-  cache_resource<cache_resource_config_t<U>{ .granularity = pow2_t{32} }>;
+  cache_resource<R, cache_resource_config{ .granularity = pow2_t{32} }>;
 
 using cct_res1_t = cct_cache1_t<cct_upstream1_t>;
 using cct_res2_t = cct_cache1_t<cct_upstream2_t>;
@@ -95,8 +95,8 @@ using upstream3_t =
   test_resource<resource_params{ .min_size = 1000, .alignment = 32,
                                  .is_granular = true, .is_sweeping = true}>;
 
-template <resource U, bool _thread_safe = true>
-using cache1_t = cache_resource<cache_resource_config_t<U>{
+template <resource R, bool _thread_safe = true>
+using cache1_t = cache_resource<R, cache_resource_config{
   .granularity = pow2_t{1_KiB},
   .min_block_size = 1_MiB,
   .max_block_size = 4_MiB,
@@ -104,8 +104,8 @@ using cache1_t = cache_resource<cache_resource_config_t<U>{
   .thread_safe = _thread_safe
 }>;
 
-template <resource U, bool _thread_safe = true>
-using cache2_t = cache_resource<cache_resource_config_t<U>{
+template <resource R, bool _thread_safe = true>
+using cache2_t = cache_resource<R, cache_resource_config{
   .granularity = pow2_t{32},
   .min_block_size = 1500,
   .max_block_size = 100000,

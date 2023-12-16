@@ -23,10 +23,10 @@ struct alignas(16) head_block_t {
   bool operator==(const head_block_t&) const noexcept = default;
 };
 
-template <auto _cfg>
+template <sweeping_resource R, auto _cfg>
 class cache_resource_impl {
 public:
-  using upstream_t = typename decltype(_cfg)::upstream_resource;
+  using upstream_t = R;
 
   constexpr static auto thread_safety = _cfg.thread_safe
     ? __detail::thread_safe : __detail::thread_unsafe;
@@ -141,8 +141,8 @@ public:
   static_assert(_cfg.granularity >= min_granularity);
 };
 
-template <auto _cfg>
-head_block_t cache_resource_impl<_cfg>::upstream_allocate
+template <sweeping_resource R, auto _cfg>
+head_block_t cache_resource_impl<R, _cfg>::upstream_allocate
   (const size_t size) noexcept {
   using traits = resource_traits<upstream_t>;
 
@@ -189,9 +189,9 @@ head_block_t cache_resource_impl<_cfg>::upstream_allocate
   }
 }
 
-template <auto _cfg>
-void* cache_resource_impl<_cfg>::allocate(const size_t size,
-                                          const pow2_t alignment) noexcept {
+template <sweeping_resource R, auto _cfg>
+void* cache_resource_impl<R, _cfg>::allocate(const size_t size,
+                                             const pow2_t alignment) noexcept {
   // First make sure the size if a multiple of granularity (it is a
   // pow2_t, so the check is easy)
   if (size % _cfg.granularity) [[unlikely]] return nullptr;
@@ -261,9 +261,9 @@ void* cache_resource_impl<_cfg>::allocate(const size_t size,
   }
 }
 
-template <auto _cfg>
-void cache_resource_impl<_cfg>::deallocate(void* ptr, const size_t size,
-                                           const pow2_t alignment) noexcept {
+template <sweeping_resource R, auto _cfg>
+void cache_resource_impl<R, _cfg>::deallocate(void* ptr, const size_t size,
+                                              const pow2_t alignment) noexcept {
   if (!ptr || !size) [[unlikely]] return;
 
   const auto head_ref = make_mem_ref<thread_safety>(free_chunks_head_);
@@ -281,8 +281,8 @@ void cache_resource_impl<_cfg>::deallocate(void* ptr, const size_t size,
                                          mo_t::release, mo_t::relaxed));
 }
 
-template <auto _cfg>
-cache_resource_impl<_cfg>::~cache_resource_impl() noexcept {
+template <sweeping_resource R, auto _cfg>
+cache_resource_impl<R, _cfg>::~cache_resource_impl() noexcept {
   /* The chunks in the free list are obviously out of order, so we
    * find andjacent ones here. Luckily, this is the destructor so
    * we don't have to think about thread safety */

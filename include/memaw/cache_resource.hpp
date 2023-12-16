@@ -24,13 +24,7 @@ namespace memaw {
  * @brief Configuration parameters for cache_resource with valid
  *        defaults
  **/
-template <sweeping_resource R>
-struct cache_resource_config_t {
-  /**
-   * @brief The underlying resource to cache (a template parameter)
-   **/
-  using upstream_resource = R;
-
+struct cache_resource_config {
   /**
    * @brief The allocation granularity for this adaptor. The size of
    *        every allocation must be a multiple of this value. Must
@@ -46,10 +40,10 @@ struct cache_resource_config_t {
    * @brief The minimum (and also the initial) block size to allocate
    *        from the underlying resource. Must not be smaller than
    *        granularity
-   * @note  If R is a bound_resource, any block size value will be
-   *        automatically ceiled to be greater than R::min_size() (and
-   *        additionally a multiple of it if R is also a
-   *        granular_resource) at runtime
+   * @note  If the upstream is a bound_resource, any block size value
+   *        will be automatically ceiled to be greater than its
+   *        min_size() (and additionally a multiple of it if the
+   *        upstream is also a granular_resource) at runtime
    **/
   const size_t min_block_size = 32_MiB;
 
@@ -59,7 +53,7 @@ struct cache_resource_config_t {
    * @note  If an allocation fails at some point, a previous (smaller
    *        by block_size_multiplier to some power, but not less than
    *        min_block_size) size will be tried if possible. That will
-   *        require additional R::allocate() calls
+   *        require additional upstream allocate() calls
    **/
   const size_t max_block_size = 1_GiB;
 
@@ -80,21 +74,11 @@ struct cache_resource_config_t {
    *        will use atomic instructions to manage its internal
    *        structures (requires DWCAS). The thread safe
    *        implementation is lock-free
-   * @note  If the underlying resource is not thread safe, setting this
+   * @note  If the upstream resource is not thread safe, setting this
    *        parameter to true will change the type of instructions
    *        used but won't make the cache thread safe either
    **/
-  const bool thread_safe = thread_safe_resource<upstream_resource>;
-};
-
-/**
- * @brief The concept of a set of configuration parameters for
- *        cache_resource
- **/
-template <typename C>
-concept cache_resource_config = requires {
-  { cache_resource_config_t<typename C::upstream_resource>{} }
-    -> std::same_as<C>;
+  const bool thread_safe = true;
 };
 
 /**
@@ -103,7 +87,10 @@ concept cache_resource_config = requires {
  *        requests. Memory is not freed until the resource is
  *        destructed (as in std::pmr::monotonic_buffer_resource)
  **/
-template <cache_resource_config auto _config>
+template <sweeping_resource R,
+          cache_resource_config _config = cache_resource_config{
+            .thread_safe = thread_safe_resource<R>
+          }>
 class cache_resource {
 public:
   /**
@@ -111,7 +98,7 @@ public:
    *        equals 32 bytes. Always >= alignof(std::max_align_t).
    **/
   constexpr static pow2_t min_granularity =
-    __detail::cache_resource_impl<_config>::min_granularity;
+    __detail::cache_resource_impl<R, _config>::min_granularity;
 
   static_assert(_config.granularity >= min_granularity);
   static_assert(_config.min_block_size >= _config.granularity);
@@ -119,18 +106,24 @@ public:
   static_assert(_config.max_block_size == _config.min_block_size
                 || _config.block_size_multiplier > 1);
 
-  using upstream_t = typename decltype(_config)::upstream_resource;
+  /**
+   * @brief The underlying resource to cache (a template parameter)
+   **/
+  using upstream_t = R;
 
-  constexpr static auto config = _config;
+  /**
+   * @brief The configuration parameters of the resource
+   **/
+  constexpr static const cache_resource_config& config = _config;
 
   constexpr static bool is_granular = true;
   constexpr static bool is_sweeping = true;
   constexpr static bool is_thread_safe =
     _config.thread_safe && thread_safe_resource<upstream_t>;
 
-  template <resource R>
+  template <resource T>
   constexpr static bool is_substitutable_for =
-    substitutable_resource_for<upstream_t, R>;
+    substitutable_resource_for<upstream_t, T>;
 
   /**
    * @brief Returns the (configured) size of a minimum allocation: any
@@ -193,10 +186,7 @@ public:
   bool operator==(const cache_resource&) const noexcept = default;
 
 private:
-  __detail::cache_resource_impl<_config> impl_;
+  __detail::cache_resource_impl<R, _config> impl_;
 };
-
-template <sweeping_resource R>
-cache_resource(R&&) -> cache_resource<cache_resource_config_t<R>{}>;
 
 } // namespace memaw
