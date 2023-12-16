@@ -43,6 +43,21 @@ using cct_res2_t = cct_cache1_t<cct_upstream2_t>;
 using cct_res3_t = cct_cache2_t<cct_upstream1_t>;
 using cct_res4_t = cct_cache2_t<cct_upstream2_t>;
 
+TEST(CacheResourceBaseTests, construction) {
+  // Construction guide & default construction
+  mock_resource mock;
+  cache_resource r1{cct_upstream1_t{mock}};
+
+  cache_resource<cct_upstream1_t> r2;
+  cache_resource<cct_upstream1_t,
+                 cache_resource_config{ .thread_safe = false }> r3;
+  EXPECT_TRUE((std::is_same_v<typename decltype(r1)::upstream_t,
+                              typename decltype(r2)::upstream_t>));
+
+  EXPECT_TRUE((std::is_same_v<typename decltype(r2)::upstream_t,
+                              typename decltype(r3)::upstream_t>));
+}
+
 template <typename T>
 class CacheResourceConceptsTests: public testing::Test {};
 using CctCacheResources = testing::Types<cct_res1_t, cct_res2_t,
