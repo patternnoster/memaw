@@ -225,7 +225,10 @@ To mark resource as thread_safe one has to specialize the constant [**enable_thr
 ### cache_resource
 <sub>Defined in header [&lt;memaw/cache_resource.hpp&gt;](/include/memaw/cache_resource.hpp)</sub>
 ```c++
-template <cache_resource_config auto _config>
+template <sweeping_resource R,
+          cache_resource_config _config = cache_resource_config{
+            .thread_safe = thread_safe_resource<R>
+          }>
 class cache_resource;
 ```
 Memory resource that allocates big blocks from an upstream resource and uses those blocks for (smaller) allocation requests. Memory is not freed until the resource is destructed (as in **std::pmr::monotonic_buffer_resource**).
@@ -246,25 +249,24 @@ Memory resource that allocates big blocks from an upstream resource and uses tho
 
 | Name | Description |
 |---|---|
-| **upstream_t** | the configured type of the upstream resource |
+| **upstream_t** | the underlying resource to cache (a template parameter) |
 
 #### Constants
 
 | Name | Description |
 |---|---|
-| **config** | the resource config of type [**cache_resource_config_t**](#cache_resource_config_t) (template parameter) |
+| **config** | the resource config of type [**cache_resource_config**](#cache_resource_config) (template parameter) |
 | **is_granular** | enables [**granular_resource**](#granular_resource) |
 | **is_substitutable_for** | enables [**substitutable_resource_for**](#substitutable_resource_for) if the upstream resource is substitutable for the given one |
 | **is_sweeping** | enables [**sweeping_resource**](#sweeping_resource) |
-| **is_thread_safe** | enables [**thread_safe_resource**](#thread_safe_resource) if [**config.thread_safe**](#cache_resource_config_tthread_safe) is true |
+| **is_thread_safe** | enables [**thread_safe_resource**](#thread_safe_resource) if [**config.thread_safe**](#cache_resource_configthread_safe) is true and the upstream resource is thread-safe |
 | **min_granularity** | the minimum value for the granularity parameter. Normally equals 32 bytes, always `>= alignof(std::max_align_t)` |
 
 #### Helper concepts and types
 
 | Name | Description |
 |---|---|
-| **cache_resource_config** | the concept of a set of configuration parameters of (template) type [**cache_resource_config_t**](#cache_resource_config_t) |
-| [**cache_resource_config_t**](#cache_resource_config_t) | configuration parameters for [**cache_resource**](#cache_resource) with valid defaults |
+| [**cache_resource_config**](#cache_resource_config) | configuration parameters for [**cache_resource**](#cache_resource) with valid defaults |
 
 ### cache_resource::allocate
 <sub>Defined in header [&lt;memaw/cache_resource.hpp&gt;](/include/memaw/cache_resource.hpp)</sub>
@@ -327,31 +329,24 @@ Returns the (configured) size of a minimum allocation: any allocation can only r
 
 ---
 
-### cache_resource_config_t
+### cache_resource_config
 <sub>Defined in header [&lt;memaw/cache_resource.hpp&gt;](/include/memaw/cache_resource.hpp)</sub>
 ```c++
-template <sweeping_resource R>
-struct cache_resource_config_t;
+struct cache_resource_config;
 ```
 Configuration parameters for [**cache_resource**](#cache_resource) with valid defaults.
-
-#### Member types
-
-| Name | Value | Description |
-|---|:---:|---|
-| **upstream_resource** | **R** | the underlying resource to cache |
 
 #### Fields
 
 | Name | Default | Description |
 |---|:---:|---|
-| [**granularity**](#cache_resource_config_tgranularity) | 4KiB | the allocation granularity for this adaptor, the size of every allocation must be a multiple of this value |
-| [**min_block_size**](#cache_resource_config_tmin_block_size) | 32MiB | the minimum (and also the initial) block size to allocate from the underlying resource |
-| [**max_block_size**](#cache_resource_config_tmax_block_size) | 1GiB | the maximum block size to allocate from the underlying resource |
-| [**block_size_multiplier**](#cache_resource_config_tblock_size_multiplier) | 2.0 | the multiplier for every next block allocation from the underlying resource (until **max_block_size** is reached) |
-| [**thread_safe**](#cache_resource_config_tthread_safe) | true iff **R** is [**thread_safe**](#thread_safe_resource) | thread safety policy |
+| [**granularity**](#cache_resource_configgranularity) | 4KiB | the allocation granularity for this adaptor, the size of every allocation must be a multiple of this value |
+| [**min_block_size**](#cache_resource_configmin_block_size) | 32MiB | the minimum (and also the initial) block size to allocate from the underlying resource |
+| [**max_block_size**](#cache_resource_configmax_block_size) | 1GiB | the maximum block size to allocate from the underlying resource |
+| [**block_size_multiplier**](#cache_resource_configblock_size_multiplier) | 2.0 | the multiplier for every next block allocation from the underlying resource (until **max_block_size** is reached) |
+| [**thread_safe**](#cache_resource_configthread_safe) | true | thread safety policy |
 
-#### cache_resource_config_t::granularity
+#### cache_resource_config::granularity
 ```c++
 const pow2_t granularity = pow2_t{4_KiB};
 ```
@@ -362,29 +357,29 @@ The allocation granularity for this adaptor. The size of every allocation must b
 
 ---
 
-#### cache_resource_config_t::min_block_size
+#### cache_resource_config::min_block_size
 ```c++
 const size_t min_block_size = 32_MiB;
 ```
 The minimum (and also the initial) block size to allocate from the underlying resource. Must not be smaller than granularity.
 
 > [!NOTE]
-> If R is a [**bound_resource**](#bound_resource), any block size value will be automatically ceiled to be greater than **R::min_size()** (and additionally a multiple of it if R is also a [**granular_resource**](#granular_resource)) at runtime.
+> If the upstream is a [**bound_resource**](#bound_resource), any block size value will be automatically ceiled to be greater than its **min_size()** (and additionally a multiple of it if the upstream is also a [**granular_resource**](#granular_resource)) at runtime.
 
 ---
 
-#### cache_resource_config_t::max_block_size
+#### cache_resource_config::max_block_size
 ```c++
 const size_t max_block_size = 1_GiB;
 ```
 The maximum block size to allocate from the underlying resource (must not be smaller than **min_block_size**).
 
 > [!NOTE]
-> If an allocation fails at some point, a previous (smaller by **block_size_multiplier** to some power, but not less than **min_block_size**) size will be tried if possible. That will require additional **R::allocate()** calls.
+> If an allocation fails at some point, a previous (smaller by **block_size_multiplier** to some power, but not less than **min_block_size**) size will be tried if possible. That will require additional upstream [**allocate()**](#allocate) calls.
 
 ---
 
-#### cache_resource_config_t::block_size_multiplier
+#### cache_resource_config::block_size_multiplier
 ```c++
 const double block_size_multiplier = 2.0;
 ```
@@ -395,14 +390,14 @@ The multiplier for every next block allocation from the underlying resource (unt
 
 ---
 
-#### cache_resource_config_t::thread_safe
+#### cache_resource_config::thread_safe
 ```c++
-const bool thread_safe = thread_safe_resource<upstream_resource>;
+const bool thread_safe = true;
 ```
 Thread safety policy: if set to true, the implementation will use atomic instructions to manage its internal structures (requires DWCAS). The thread safe implementation is lock-free.
 
 > [!NOTE]
-> If the underlying resource is not thread safe, setting this parameter to true will change the type of instructions used but won't make the cache thread safe either.
+> If the upstream resource is not thread safe, setting this parameter to true will change the type of instructions used but won't make the cache thread safe either.
 
 ---
 
