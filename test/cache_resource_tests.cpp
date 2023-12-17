@@ -110,23 +110,29 @@ using upstream3_t =
   test_resource<resource_params{ .min_size = 1000, .alignment = 32,
                                  .is_granular = true, .is_sweeping = true}>;
 
-template <resource R, bool _thread_safe = true>
-using cache1_t = cache_resource<R, cache_resource_config{
+template <bool _thread_safe>
+constexpr cache_resource_config cache1_config = {
   .granularity = pow2_t{1_KiB},
   .min_block_size = 1_MiB,
   .max_block_size = 4_MiB,
   .block_size_multiplier = 2.42,
   .thread_safe = _thread_safe
-}>;
+};
 
-template <resource R, bool _thread_safe = true>
-using cache2_t = cache_resource<R, cache_resource_config{
+template <bool _thread_safe>
+constexpr cache_resource_config cache2_config = {
   .granularity = pow2_t{32},
   .min_block_size = 1500,
   .max_block_size = 100000,
   .block_size_multiplier = 3,
   .thread_safe = _thread_safe
-}>;
+};
+
+template <resource R, bool _thread_safe = true>
+using cache1_t = cache_resource<R, cache1_config<_thread_safe>>;
+
+template <resource R, bool _thread_safe = true>
+using cache2_t = cache_resource<R, cache2_config<_thread_safe>>;
 
 template <typename T>
 class CacheResourceTests: public testing::Test {
