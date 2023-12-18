@@ -262,11 +262,12 @@ Memory resource that allocates big blocks from an upstream resource and uses tho
 | **is_thread_safe** | enables [**thread_safe_resource**](#thread_safe_resource) if [**config.thread_safe**](#cache_resource_configthread_safe) is true and the upstream resource is thread-safe |
 | **min_granularity** | the minimum value for the granularity parameter. Normally equals 32 bytes, always `>= alignof(std::max_align_t)` |
 
-#### Helper concepts and types
+#### Helper types and specializations
 
 | Name | Description |
 |---|---|
 | [**cache_resource_config**](#cache_resource_config) | configuration parameters for [**cache_resource**](#cache_resource) with valid defaults |
+| **enable_substitutable_resource_for** | enables the [**substitutable_resource_for**](#substitutable_resource_for) concept for two **cache_resources** if their corresponding upstream resources are substitutable |
 
 ### cache_resource::allocate
 <sub>Defined in header [&lt;memaw/cache_resource.hpp&gt;](/include/memaw/cache_resource.hpp)</sub>
