@@ -189,4 +189,15 @@ private:
   __detail::cache_resource_impl<R, _config> impl_;
 };
 
+/**
+ * @brief Enables the substitutable_resource_for concept for two
+ *        cache_resources if their corresponding upstream resources
+ *        are substitutable
+ **/
+template <sweeping_resource L, cache_resource_config _lcfg,
+          sweeping_resource R, cache_resource_config _rcfg>
+constexpr bool enable_substitutable_resource_for
+  <cache_resource<L, _lcfg>, cache_resource<R, _rcfg>>
+  = substitutable_resource_for<L, R>;
+
 } // namespace memaw

@@ -85,16 +85,18 @@ TYPED_TEST(CacheResourceConceptsTests, concepts) {
   if constexpr (std::same_as<upstream, cct_upstream1_t>) {
     EXPECT_FALSE(thread_safe_resource<TypeParam>);
     EXPECT_FALSE((substitutable_resource_for<TypeParam, cct_upstream2_t>));
+    EXPECT_FALSE((substitutable_resource_for<TypeParam, cct_res2_t>));
+    EXPECT_FALSE((substitutable_resource_for<TypeParam, cct_res4_t>));
   }
   else {
     EXPECT_TRUE(thread_safe_resource<TypeParam>);
     EXPECT_TRUE((substitutable_resource_for<TypeParam, cct_upstream2_t>));
+    EXPECT_TRUE((substitutable_resource_for<TypeParam, cct_res2_t>));
+    EXPECT_TRUE((substitutable_resource_for<TypeParam, cct_res4_t>));
   }
 
-  EXPECT_FALSE((substitutable_resource_for<TypeParam, cct_res1_t>));
-  EXPECT_FALSE((substitutable_resource_for<TypeParam, cct_res2_t>));
-  EXPECT_FALSE((substitutable_resource_for<TypeParam, cct_res3_t>));
-  EXPECT_FALSE((substitutable_resource_for<TypeParam, cct_res4_t>));
+  EXPECT_TRUE((substitutable_resource_for<TypeParam, cct_res1_t>));
+  EXPECT_TRUE((substitutable_resource_for<TypeParam, cct_res3_t>));
 
   EXPECT_TRUE((substitutable_resource_for<TypeParam, cct_upstream1_t>));
 }
