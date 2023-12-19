@@ -56,6 +56,39 @@ TEST(CacheResourceBaseTests, construction) {
 
   EXPECT_TRUE((std::is_same_v<typename decltype(r2)::upstream_t,
                               typename decltype(r3)::upstream_t>));
+
+  // Move construction
+  using r1_t = decltype(r1);
+  constexpr static size_t second_block_size =
+    r1_t::config.min_block_size * size_t(r1_t::config.block_size_multiplier);
+
+  auto mem = std::make_unique<std::byte[]>(r1_t::config.max_block_size
+                                           + second_block_size);
+  EXPECT_CALL(mock, allocate(_, _)).Times(2)
+    .WillOnce([&mem](const size_t size, size_t) {
+      EXPECT_EQ(size, r1_t::config.min_block_size);
+      return mem.get();
+    })
+    .WillOnce([&mem](const size_t size, size_t) {
+      EXPECT_EQ(size, second_block_size);
+      return mem.get() + r1_t::config.min_block_size;
+    });
+
+  const size_t size = r1_t::config.min_block_size / 4;
+  for (size_t i = 0; i < 4; ++i)
+    r1.deallocate(r1.allocate(size), size);
+
+  EXPECT_CALL(mock, deallocate(_, _, _)).Times(1)
+    .WillOnce([&mem](void* const ptr, const size_t size, size_t) {
+      EXPECT_EQ(ptr, mem.get());
+      EXPECT_EQ(size, r1_t::config.min_block_size + second_block_size);
+    });
+
+  {
+    cache_resource r3 = std::move(r1);
+    for (size_t i = 0; i < 2; ++i)
+      r3.deallocate(r3.allocate(size), size);
+  }
 }
 
 template <typename T>
