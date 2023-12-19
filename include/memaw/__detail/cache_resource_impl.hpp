@@ -17,19 +17,13 @@
 
 namespace memaw::__detail {
 
-struct alignas(16) head_block_t {
-  uintptr_t ptr;
-  size_t size = 0;
-  bool operator==(const head_block_t&) const noexcept = default;
-};
-
 template <sweeping_resource R, auto _cfg>
 class cache_resource_impl {
 public:
   using upstream_t = R;
 
   constexpr static auto thread_safety = _cfg.thread_safe
-    ? __detail::thread_safe : __detail::thread_unsafe;
+    ? thread_safe : thread_unsafe;
 
   constexpr cache_resource_impl()
     noexcept(std::is_nothrow_default_constructible_v<upstream_t>) = default;
@@ -45,16 +39,6 @@ public:
     upstream_(std::move(rhs.upstream_)) {
     copy_internals(rhs);
     rhs.reset_internals();
-  }
-
-  constexpr cache_resource_impl& operator=(cache_resource_impl&& rhs)
-    noexcept(std::is_nothrow_move_assignable_v<upstream_t>)
-    requires(std::is_move_assignable_v<upstream_t>) {
-    if (this != &rhs) {
-      upstream_ = std::move(rhs.upstream_);
-      copy_internals(rhs);
-      rhs.reset_internals();
-    }
   }
 
   [[nodiscard]] inline void* allocate(size_t, pow2_t) noexcept;
@@ -73,32 +57,13 @@ private:
    *        alone (the upstream bounds/granularity not taken into
    *        account)
    **/
-  size_t get_next_block_size() const noexcept {
-    if constexpr (_cfg.min_block_size == _cfg.max_block_size)
-      return _cfg.max_block_size;
-    else {
-      const size_t value =
-        make_mem_ref<thread_safety>(last_block_size_).load(mo_t::relaxed);
-
-      if (!value) return _cfg.min_block_size;
-      return nupp::minimum(size_t(double(value) * _cfg.block_size_multiplier),
-                           _cfg.max_block_size);
-    }
-  }
+  inline size_t get_next_block_size() const noexcept;
 
   /**
    * @brief Returns the block size one step smaller than the given one
    *        (the upstream bounds/granularity not taken into account)
    **/
-  static size_t get_prev_block_size(const size_t size) noexcept {
-    if constexpr (_cfg.min_block_size == _cfg.max_block_size)
-      return _cfg.min_block_size;
-    else {
-      const auto value = size_t(std::ceil(double(size)
-                                          / _cfg.block_size_multiplier));
-      return nupp::maximum(value, _cfg.min_block_size);
-    }
-  }
+  constexpr static size_t get_prev_block_size(const size_t size) noexcept;
 
   void copy_internals(const cache_resource_impl& rhs) noexcept {
     head_ = rhs.head_;
@@ -112,6 +77,13 @@ private:
     last_block_size_ = 0;
   }
 
+  struct alignas(16) head_block_t {
+    uintptr_t ptr;
+    size_t size;
+
+    bool operator==(const head_block_t&) const noexcept = default;
+  };
+
   /**
    * @brief Allocates the given (non-zero) amount of bytes from the
    *        upstream with the regular alignment. On failure returns
@@ -119,7 +91,7 @@ private:
    **/
   inline head_block_t upstream_allocate(size_t) noexcept;
 
-  head_block_t head_;
+  head_block_t head_ = {};
 
   struct free_chunk_t {
     free_chunk_t* next;
@@ -142,8 +114,34 @@ public:
 };
 
 template <sweeping_resource R, auto _cfg>
-head_block_t cache_resource_impl<R, _cfg>::upstream_allocate
+size_t cache_resource_impl<R, _cfg>::get_next_block_size() const noexcept {
+  if constexpr (_cfg.min_block_size == _cfg.max_block_size)
+    return _cfg.max_block_size;
+  else {
+    const size_t value =
+      make_mem_ref<thread_safety>(last_block_size_).load(mo_t::relaxed);
+
+    if (!value) return _cfg.min_block_size;
+    return nupp::minimum(size_t(double(value) * _cfg.block_size_multiplier),
+                         _cfg.max_block_size);
+  }
+}
+
+template <sweeping_resource R, auto _cfg>
+constexpr size_t cache_resource_impl<R, _cfg>::get_prev_block_size
   (const size_t size) noexcept {
+  if constexpr (_cfg.min_block_size == _cfg.max_block_size)
+    return _cfg.min_block_size;
+  else {
+    const auto value = size_t(std::ceil(double(size)
+                                        / _cfg.block_size_multiplier));
+    return nupp::maximum(value, _cfg.min_block_size);
+  }
+}
+
+template <sweeping_resource R, auto _cfg>
+auto cache_resource_impl<R, _cfg>::upstream_allocate
+  (const size_t size) noexcept -> head_block_t {
   using traits = resource_traits<upstream_t>;
 
   // If got here, we'll need to allocate from the upstream. First

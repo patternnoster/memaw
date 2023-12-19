@@ -153,13 +153,10 @@ public:
 
   cache_resource(const cache_resource&) = delete;
   cache_resource& operator=(const cache_resource&) = delete;
+  cache_resource& operator=(cache_resource&&) = delete;
 
   constexpr cache_resource(cache_resource&& rhs)
     noexcept(std::is_nothrow_move_constructible_v<upstream_t>) = default;
-
-  constexpr cache_resource& operator=(cache_resource&& rhs)
-    noexcept(std::is_nothrow_move_assignable_v<upstream_t>)
-    requires(std::is_move_assignable_v<upstream_t>) = default;
 
   /**
    * @brief Allocates memory from the cache, calling the upstream
