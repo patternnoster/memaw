@@ -2,6 +2,7 @@
 #include <atomic>
 #include <atomic128/atomic128_ref.hpp>
 #include <concepts>
+#include <utility>
 
 /**
  * @file
@@ -40,6 +41,11 @@ public:
     ref = value;
   }
 
+  T exchange(T value, const mo_t) const noexcept {
+    std::swap(value, ref);
+    return value;
+  }
+
   bool compare_exchange_strong(T& old_val, const T& new_val, const mo_t,
                                const mo_t = mo_t::relaxed) const noexcept {
     if (ref != old_val) {
@@ -71,6 +77,10 @@ public:
 
   void store(const T& val, const mo_t mo) const noexcept {
     std::atomic_ref(ref).store(val, mo);
+  }
+
+  T exchange(const T& val, const mo_t mo) const noexcept {
+    return std::atomic_ref(ref).exchange(val, mo);
   }
 
   template <std::same_as<mo_t>... MOs>
@@ -115,6 +125,10 @@ public:
     __atomic_store_n(&ref, val, unsigned(mo));
   }
 
+  T exchange(const T& val, const mo_t mo) const noexcept {
+    return __atomic_exchange_n(&ref, val, unsigned(mo));
+  }
+
   template <std::same_as<mo_t>... MOs>
   bool compare_exchange_strong(T& old_val, const T& new_val,
                                const MOs... mos) const noexcept {
@@ -138,6 +152,10 @@ public:
 template <atomic128_referenceable T>
 struct mem_ref<T, thread_safe> {
 public:
+  T exchange(const T& val, const mo_t mo) const noexcept {
+    return atomic128_ref(ref).exchange(val, mo);
+  }
+
   template <std::same_as<mo_t>... MOs>
   bool compare_exchange_strong(T& old_val, const T& new_val,
                                const MOs... mos) const noexcept {
