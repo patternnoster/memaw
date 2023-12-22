@@ -37,8 +37,12 @@ public:
   constexpr cache_resource_impl(cache_resource_impl&& rhs)
     noexcept(std::is_nothrow_move_constructible_v<upstream_t>):
     upstream_(std::move(rhs.upstream_)) {
-    copy_internals(rhs);
-    rhs.reset_internals();
+    head_ = make_mem_ref<thread_safety>(rhs.head_)
+      .exchange({}, mo_t::acquire);
+    free_chunks_head_ = make_mem_ref<thread_safety>(rhs.free_chunks_head_)
+      .exchange(nullptr, mo_t::acquire);
+    last_block_size_ = make_mem_ref<thread_safety>(rhs.last_block_size_)
+      .exchange(0, mo_t::relaxed);
   }
 
   [[nodiscard]] inline void* allocate(size_t, pow2_t) noexcept;
@@ -64,18 +68,6 @@ private:
    *        (the upstream bounds/granularity not taken into account)
    **/
   constexpr static size_t get_prev_block_size(const size_t size) noexcept;
-
-  void copy_internals(const cache_resource_impl& rhs) noexcept {
-    head_ = rhs.head_;
-    free_chunks_head_ = rhs.free_chunks_head_;
-    last_block_size_ = rhs.last_block_size_;
-  }
-
-  void reset_internals() noexcept {
-    head_ = head_block_t{};
-    free_chunks_head_ = nullptr;
-    last_block_size_ = 0;
-  }
 
   struct alignas(16) head_block_t {
     uintptr_t ptr;

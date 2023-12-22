@@ -155,6 +155,15 @@ public:
   cache_resource& operator=(const cache_resource&) = delete;
   cache_resource& operator=(cache_resource&&) = delete;
 
+  /**
+   * @brief Move constructs the cache leaving rhs in an empty but
+   *        valid state (as long as the same is true for the upstream
+   *        resource)
+   * @note  The operation is not thread safe even if the resources are
+   *        configured as such. All memory allocated by the rhs
+   *        resource and not deallocated before the move must be
+   *        deallocated through the new instance
+   **/
   constexpr cache_resource(cache_resource&& rhs)
     noexcept(std::is_nothrow_move_constructible_v<upstream_t>) = default;
 
