@@ -55,4 +55,53 @@ struct pool_resource_config {
   const bool thread_safe = true;
 };
 
+/**
+ * @brief Memory resource that maintains lists of chunks of fixed
+ *        sizes allocated from the upstream resource. Chunks are
+ *        reused upon deallocation but are not returned to the
+ *        upstream until this resource is destructed
+ **/
+template <sweeping_resource R,
+          pool_resource_config _config = pool_resource_config{
+            .thread_safe = thread_safe_resource<R>
+          }>
+class pool_resource {
+public:
+  static_assert(_config.min_chunk_size >= alignof(std::max_align_t));
+  static_assert(_config.max_chunk_size % _config.min_chunk_size == 0);
+
+  /**
+   * @brief The underlying resource to allocate memory from
+   **/
+  using upstream_t = R;
+
+  /**
+   * @brief The configuration parameters of the resource
+   **/
+  constexpr static const pool_resource_config& config = _config;
+
+  constexpr static bool is_granular = true;
+  constexpr static bool is_sweeping = true;
+  constexpr static bool is_thread_safe =
+    _config.thread_safe && thread_safe_resource<upstream_t>;
+
+  /**
+   * @brief Returns the (configured) size of a minimum allocation: any
+   *        allocation can only request a size that is a multiple of
+   *        this value
+   **/
+  constexpr static pow2_t min_size() noexcept {
+    return _config.min_chunk_size;
+  }
+
+  /**
+   * @brief Returns the minimal alignment of any address allocated by
+   *        the pool if its configuration allows that
+   **/
+  constexpr static pow2_t guaranteed_alignment() noexcept
+    requires(_config.min_chunk_size > alignof(std::max_align_t)) {
+    return _config.min_chunk_size;
+  }
+};
+
 } // namespace memaw
