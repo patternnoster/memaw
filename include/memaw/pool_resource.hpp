@@ -1,6 +1,11 @@
 #pragma once
+#include <concepts>
+#include <type_traits>
+
 #include "concepts.hpp"
 #include "literals.hpp"
+
+#include "__detail/pool_resource_impl.hpp"
 
 /**
  * @file
@@ -102,6 +107,23 @@ public:
     requires(_config.min_chunk_size > alignof(std::max_align_t)) {
     return _config.min_chunk_size;
   }
+
+  constexpr pool_resource()
+    noexcept(std::is_nothrow_default_constructible_v<upstream_t>)
+    requires(std::default_initializable<upstream_t>) {}
+
+  constexpr pool_resource(upstream_t&& upstream)
+    noexcept(std::is_nothrow_move_constructible_v<upstream_t>):
+    impl_(std::move(upstream)) {}
+
+  pool_resource(const pool_resource&) = delete;
+  pool_resource& operator=(const pool_resource&) = delete;
+  pool_resource& operator=(pool_resource&&) = delete;
+
+  bool operator==(const pool_resource&) const noexcept = default;
+
+private:
+  __detail::pool_resource_impl<R, _config> impl_;
 };
 
 } // namespace memaw
