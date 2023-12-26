@@ -1,5 +1,6 @@
 #pragma once
 #include <concepts>
+#include <ranges>
 #include <type_traits>
 
 #include "concepts.hpp"
@@ -71,9 +72,14 @@ template <sweeping_resource R,
             .thread_safe = thread_safe_resource<R>
           }>
 class pool_resource {
+  using impl_t = __detail::pool_resource_impl<R, _config>;
+
 public:
   static_assert(_config.min_chunk_size >= alignof(std::max_align_t));
   static_assert(_config.max_chunk_size % _config.min_chunk_size == 0);
+  static_assert(impl_t::chunk_sizes.back() == _config.max_chunk_size,
+                "max_chunk_size must equal min_chunk_size * "
+                "chunk_size_multiplier^n for some n");
 
   /**
    * @brief The underlying resource to allocate memory from
@@ -84,6 +90,11 @@ public:
    * @brief The configuration parameters of the resource
    **/
   constexpr static const pool_resource_config& config = _config;
+
+  /**
+   * @brief The range of sizes of chunks in the pool
+   **/
+  constexpr static const ranges::range auto& chunk_sizes = impl_t::chunk_sizes;
 
   constexpr static bool is_granular = true;
   constexpr static bool is_sweeping = true;
@@ -123,7 +134,7 @@ public:
   bool operator==(const pool_resource&) const noexcept = default;
 
 private:
-  __detail::pool_resource_impl<R, _config> impl_;
+  impl_t impl_;
 };
 
 } // namespace memaw
