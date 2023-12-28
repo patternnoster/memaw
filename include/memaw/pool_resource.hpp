@@ -131,6 +131,40 @@ public:
   pool_resource& operator=(const pool_resource&) = delete;
   pool_resource& operator=(pool_resource&&) = delete;
 
+  /**
+   * @brief Move constructs the pool leaving rhs in an empty but valid
+   *        state (as long as the same is true for the upstream
+   *        resource)
+   * @note  The operation is not thread safe even if the resources are
+   *        configured as such. All memory allocated by the rhs
+   *        resource and not deallocated before the move must be
+   *        deallocated through the new instance
+   **/
+  constexpr pool_resource(pool_resource&& rhs)
+    noexcept(std::is_nothrow_move_constructible_v<upstream_t>) = default;
+
+  /**
+   * @brief Allocates memory from the pool, calling the upstream
+   *        allocate() if there is not enough left
+   * @param size must be a multiple of config.min_chunk_size
+   * @param alignment must be a power of 2
+   **/
+  [[nodiscard]] void* allocate
+    (const size_t size,
+     const size_t alignment = alignof(std::max_align_t)) noexcept {
+    return impl_.allocate(size, pow2_t{alignment, pow2_t::ceil});
+  }
+
+  /**
+   * @brief Deallocates previously allocated chunks and marks them for
+   *        reuse. The deallocate() call on the upstream resource
+   *        happens only on destruction
+   **/
+  void deallocate(void* const ptr, const size_t size,
+                  const size_t = alignof(std::max_align_t)) noexcept {
+    impl_.deallocate(ptr, size);  // NB: alignment param is ignored
+  }
+
   bool operator==(const pool_resource&) const noexcept = default;
 
 private:
