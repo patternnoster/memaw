@@ -6,6 +6,8 @@ add_executable(memaw_tests
   os_resource_tests.cpp
   pages_resource_tests.cpp
   resource_common_tests.cpp
+
+  resource_test_base.cpp
 )
 target_link_libraries(memaw_tests PRIVATE memaw gmock gtest_main)
 

@@ -292,7 +292,7 @@ cache_resource_impl<R, _cfg>::~cache_resource_impl() noexcept {
     region->~free_chunk_t();
 
     memaw::deallocate<exceptions_policy::nothrow>
-      (upstream_, region, curr_chunk.size, curr_chunk.alignment);
+      (upstream_, region, curr_chunk.size, _cfg.granularity);
 
     region = curr_chunk.next;
   }

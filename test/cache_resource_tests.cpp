@@ -15,6 +15,7 @@
 #include "memaw/cache_resource.hpp"
 #include "memaw/literals.hpp"
 
+#include "resource_test_base.hpp"
 #include "test_resource.hpp"
 
 using namespace memaw;
@@ -170,18 +171,13 @@ template <resource R, bool _thread_safe = true>
 using cache2_t = cache_resource<R, cache2_config<_thread_safe>>;
 
 template <typename T>
-class CacheResourceTests: public testing::Test {
+class CacheResourceTests: public testing::Test,
+                          public resource_test_base {
 protected:
   using upstream_t = T::upstream_t;
 
   constexpr static size_t block_alignment =
     nupp::maximum(T::config.granularity.value, upstream_t::params.alignment);
-
-  constexpr static void* align_by(void* const ptr,
-                                  const size_t alignment) noexcept {
-    return reinterpret_cast<void*>((uintptr_t(ptr) + (alignment - 1))
-                                   & ~(alignment - 1));
-  }
 
   constexpr static size_t get_block_size(const size_t num) noexcept {
     size_t bs_lim = T::config.min_block_size;
@@ -249,28 +245,7 @@ protected:
   }
 
   void deallocate_all() noexcept {
-    EXPECT_CALL(mock, deallocate(_, _, _))
-      .Times(AtMost(int(allocations.size())))
-      .WillRepeatedly([this](void* ptr, size_t size, const size_t alignment) {
-        const auto it = allocations.find({ptr, size, alignment});
-
-        ASSERT_NE(it, allocations.end());
-        ASSERT_LE(it->size, size);
-        EXPECT_EQ(it->alignment, T::config.granularity);
-
-        // Allow sweeping
-        size-= it->size;
-        auto last_it = std::next(it);
-        while (size) {
-          ASSERT_NE(last_it, allocations.end());
-          ASSERT_LE(last_it->size, size);
-          size-= last_it->size;
-          ++last_it;
-        }
-
-        allocations.erase(it, last_it);
-      });
-
+    mock_deallocations(mock);
     test_cache.reset();  // Call the destructor now
     EXPECT_EQ(allocations.size(), 0);
   }
@@ -284,17 +259,6 @@ protected:
 
   std::unique_ptr<std::byte[]> memory;
   std::byte* next_ptr;
-
-  struct allocation {
-    void* ptr;
-    size_t size;
-    size_t alignment;
-
-    bool operator<(const allocation& rhs) const noexcept {
-      return ptr < rhs.ptr;
-    }
-  };
-  std::set<allocation> allocations;
 };
 
 using CacheResources =
