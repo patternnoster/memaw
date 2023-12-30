@@ -1,5 +1,8 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <memory>
 #include <set>
 
 struct mock_resource;
@@ -30,4 +33,28 @@ protected:
   };
 
   std::set<allocation> allocations;
+};
+
+/**
+ * @brief A base for advanced single threaded resource tests
+ **/
+class resource_test: public resource_test_base {
+protected:
+  struct allocation_request {
+    size_t size;
+    size_t alignment;
+  };
+
+  void mock_allocations(mock_resource&, std::deque<allocation_request>&&,
+                        const size_t min_align = alignof(std::max_align_t));
+
+  std::byte* get_next_ptr() const noexcept {
+    return next_ptr_;
+  }
+
+private:
+  std::deque<allocation_request> requests_;
+
+  std::unique_ptr<std::byte[]> memory_;
+  std::byte* next_ptr_ = nullptr;
 };

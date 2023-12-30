@@ -21,7 +21,6 @@
 using namespace memaw;
 
 using testing::_;
-using testing::AtMost;
 using testing::Return;
 
 using cct_upstream1_t =
@@ -172,12 +171,9 @@ using cache2_t = cache_resource<R, cache2_config<_thread_safe>>;
 
 template <typename T>
 class CacheResourceTests: public testing::Test,
-                          public resource_test_base {
+                          public resource_test {
 protected:
   using upstream_t = T::upstream_t;
-
-  constexpr static size_t block_alignment =
-    nupp::maximum(T::config.granularity.value, upstream_t::params.alignment);
 
   constexpr static size_t get_block_size(const size_t num) noexcept {
     size_t bs_lim = T::config.min_block_size;
@@ -214,34 +210,15 @@ protected:
     return std::make_pair(size, alignment);
   }
 
-  void mock_upstream_alloc(const size_t count,
-                           const size_t additional_memory = 0) noexcept {
+  void mock_upstream_alloc(const size_t count) noexcept {
     // We may need to allocate real memory because it may be used in
     // the deallocator of the cache
-    size_t total_block_sizes = 0;
+    std::deque<allocation_request> allocs;
+
     for (size_t i = 0; i < count; ++i)
-      total_block_sizes+= get_block_size(i);
+      allocs.emplace_back(get_block_size(i), T::config.granularity);
 
-    // Now make the upstream allocation function
-    const size_t req_mem = total_block_sizes + block_alignment * count
-      + additional_memory;
-    memory = std::make_unique_for_overwrite<std::byte[]>(req_mem);
-
-    next_ptr = memory.get();
-    EXPECT_CALL(mock, allocate(_, _)).Times(int(count))
-      .WillRepeatedly([this]
-                      (const size_t size, const size_t alignment) {
-        EXPECT_EQ(size, get_block_size(allocations.size()));
-        EXPECT_EQ(alignment, T::config.granularity);
-
-        const auto result =
-          align_by(next_ptr, nupp::maximum(alignment,
-                                           upstream_t::params.alignment));
-        next_ptr = (std::byte*)result + size;
-
-        allocations.emplace(result, size, alignment);
-        return reinterpret_cast<void*>(result);
-      });
+    mock_allocations(mock, std::move(allocs), upstream_t::params.alignment);
   }
 
   void deallocate_all() noexcept {
@@ -256,9 +233,6 @@ protected:
 
   mock_resource mock;
   std::shared_ptr<T> test_cache;
-
-  std::unique_ptr<std::byte[]> memory;
-  std::byte* next_ptr;
 };
 
 using CacheResources =
@@ -274,14 +248,15 @@ using CacheResources =
 TYPED_TEST_SUITE(CacheResourceTests, CacheResources);
 
 TYPED_TEST(CacheResourceTests, allocation_base) {
-  using test_t = CacheResourceTests<TypeParam>;
+  constexpr static size_t block_alignment =
+    nupp::maximum(TypeParam::config.granularity.value,
+                  TypeParam::upstream_t::params.alignment);
 
   constexpr size_t blocks_count = 8;
 
   this->mock_upstream_alloc(blocks_count);
 
-  const auto init_ptr = this->align_by(this->memory.get(),
-                                       test_t::block_alignment);
+  const auto init_ptr = this->align_by(this->get_next_ptr(), block_alignment);
   auto next_ptr = (std::byte*)init_ptr;
 
   size_t allocated = 0;
@@ -299,8 +274,7 @@ TYPED_TEST(CacheResourceTests, allocation_base) {
 
     if ((allocated + to_alloc) > this->get_block_size(curr_block)) {
       const auto diff = this->get_block_size(curr_block) - allocated;
-      next_ptr = (std::byte*)this->align_by(next_ptr + diff,
-                                            test_t::block_alignment);
+      next_ptr = (std::byte*)this->align_by(next_ptr + diff, block_alignment);
       ++curr_block;
       allocated = to_alloc;
     }
@@ -335,7 +309,7 @@ TYPED_TEST(CacheResourceTests, allocation_corner) {
   }
 
   // How much we can still allocate from the current block
-  size_t drain_size = uintptr_t(this->next_ptr) - end;
+  size_t drain_size = uintptr_t(this->get_next_ptr()) - end;
   drain_size-= drain_size % TypeParam::config.granularity;
 
   // Now do a direct allocation
@@ -387,9 +361,8 @@ TYPED_TEST(CacheResourceTests, allocation_corner) {
   }
 
   EXPECT_CALL(this->mock, allocate(_, _)).Times(int(reverse_calls_count))
-    .WillRepeatedly([](const size_t, const size_t) {
-      return nullptr;
-    });
+    .WillRepeatedly(Return(nullptr));
+
   EXPECT_EQ(this->test_cache->allocate(TypeParam::config.granularity.value),
             nullptr);
 
@@ -400,9 +373,7 @@ TYPED_TEST(CacheResourceTests, deallocation) {
   using allocation = CacheResourceTests<TypeParam>::allocation;
 
   constexpr size_t blocks_count = 8;
-  this->mock_upstream_alloc(blocks_count,
-                            blocks_count * blocks_count  // max overalign
-                            * TypeParam::config.granularity);
+  this->mock_upstream_alloc(blocks_count);
 
   // First make the allocations
   std::vector<allocation> allocs;
