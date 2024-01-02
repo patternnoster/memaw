@@ -170,8 +170,36 @@ template <resource R, bool _thread_safe = true>
 using cache2_t = cache_resource<R, cache2_config<_thread_safe>>;
 
 template <typename T>
-class CacheResourceTests: public testing::Test,
-                          public resource_test {
+class CacheResourceTestsBase: public testing::Test {
+protected:
+  constexpr static std::pair<size_t, pow2_t> get_rand_alloc
+    (const size_t max_size = T::config.min_block_size,
+     const size_t max_alignment = T::config.granularity << 2) noexcept {
+    size_t size = T::config.granularity
+      + (rand() % (max_size - T::config.granularity));
+    size-= size % T::config.granularity;
+
+    const int max_shift = (pow2_t(max_alignment)
+                           / T::config.granularity).log2();
+    const int shift = -max_shift + rand() % (max_shift * 2 + 1);
+    const pow2_t alignment = shift < 0
+      ? (T::config.granularity >> -shift)
+      : (T::config.granularity << shift);
+
+    return std::make_pair(size, alignment);
+  }
+
+  void SetUp() {
+    test_cache = std::make_shared<T>(mock);
+  }
+
+  mock_resource mock;
+  std::shared_ptr<T> test_cache;
+};
+
+template <typename T>
+class CacheResourceTests: public resource_test,
+                          public CacheResourceTestsBase<T> {
 protected:
   using upstream_t = T::upstream_t;
 
@@ -194,22 +222,6 @@ protected:
       return bs_lim;
   }
 
-  constexpr static std::pair<size_t, pow2_t> get_rand_alloc
-    (const size_t max = T::config.min_block_size) noexcept {
-    size_t size = 0;
-    while (!size) {
-      size = rand() % max;
-      size-= size % T::config.granularity;
-    }
-
-    const auto al_shift = -2 + rand() % 5;
-    const pow2_t alignment = al_shift < 0
-      ? (T::config.granularity >> -al_shift)
-      : (T::config.granularity << al_shift);
-
-    return std::make_pair(size, alignment);
-  }
-
   void mock_upstream_alloc(const size_t count) noexcept {
     // We may need to allocate real memory because it may be used in
     // the deallocator of the cache
@@ -218,21 +230,15 @@ protected:
     for (size_t i = 0; i < count; ++i)
       allocs.emplace_back(get_block_size(i), T::config.granularity);
 
-    mock_allocations(mock, std::move(allocs), upstream_t::params.alignment);
+    mock_allocations(this->mock,
+                     std::move(allocs), upstream_t::params.alignment);
   }
 
   void deallocate_all() noexcept {
-    mock_deallocations(mock);
-    test_cache.reset();  // Call the destructor now
+    mock_deallocations(this->mock);
+    this->test_cache.reset();  // Call the destructor now
     EXPECT_EQ(allocations.size(), 0);
   }
-
-  void SetUp() {
-    test_cache = std::make_shared<T>(mock);
-  }
-
-  mock_resource mock;
-  std::shared_ptr<T> test_cache;
 };
 
 using CacheResources =
@@ -395,7 +401,14 @@ TYPED_TEST(CacheResourceTests, deallocation) {
 }
 
 template <typename T>
-class CacheResourceThreadingTests: public CacheResourceTests<T> {};
+class CacheResourceThreadingTests: public resource_multithreaded_test,
+                                   public CacheResourceTestsBase<T> {
+protected:
+  void deallocate_all() noexcept {
+    this->test_cache.reset();
+    EXPECT_EQ(allocations.size(), 0);
+  }
+};
 
 using ThreadSafeCacheResources =
   testing::Types<cache1_t<upstream1_t>, cache1_t<upstream2_t>,
@@ -410,24 +423,17 @@ TYPED_TEST(CacheResourceThreadingTests, randomized_multithread) {
   constexpr size_t threads_count = 8;
   constexpr static size_t allocs_per_thread = 10000;
 
+  constexpr static size_t max_allocation = 4_KiB;
+  constexpr static size_t max_alignment = TypeParam::config.granularity << 2;
+
+  const static size_t upstream_alignment =
+    resource_traits<typename TypeParam::upstream_t>::guaranteed_alignment();
+
   constexpr size_t count = threads_count * allocs_per_thread;
-
-  auto blocks = std::make_unique<allocation[]>(count);
-  auto block_ptrs = std::make_unique<std::unique_ptr<std::byte[]>[]>(count);
-  std::atomic<size_t> last_block = 0;
-
-  EXPECT_CALL(this->mock, allocate(_, _))
-    .WillRepeatedly([this, &last_block, &blocks, &block_ptrs]
-                    (const size_t size, const size_t alignment) -> void* {
-      if (rand() % 3 == 0) // Make things more spicy
-        return nullptr;
-
-      const auto id = last_block.fetch_add(1, std::memory_order_relaxed);
-      block_ptrs[id] = std::make_unique<std::byte[]>(size + alignment);
-      blocks[id] = { this->align_by(block_ptrs[id].get(), alignment),
-                     size, alignment };
-      return blocks[id].ptr;
-    });
+  this->mock_allocations
+    (this->mock, count,
+     max_allocation + nupp::maximum(max_alignment, upstream_alignment),
+     upstream_alignment);
 
   std::latch latch(threads_count);
   std::array<std::vector<allocation>, threads_count> allocs;
@@ -444,7 +450,8 @@ TYPED_TEST(CacheResourceThreadingTests, randomized_multithread) {
       while (allocs_num < allocs_per_thread || !local_allocs.empty()) {
         if (allocs_num < allocs_per_thread && (rand() % 2)) {
           // Allocate
-          const auto [size, alignment] = this->get_rand_alloc(4_KiB);
+          const auto [size, alignment] =
+            this->get_rand_alloc(max_allocation, max_alignment);
           const auto result = this->test_cache->allocate(size, alignment);
           if (result) {
             EXPECT_EQ(result, (this->align_by(result, alignment)));
@@ -485,8 +492,7 @@ TYPED_TEST(CacheResourceThreadingTests, randomized_multithread) {
     EXPECT_GE(uintptr_t(next_it->ptr), (uintptr_t(it->ptr) + it->size));
   }
 
-  // Copy block allocations safely now and deallocate
-  this->allocations = {blocks.get(), blocks.get() + last_block.load()};
+  this->mock_deallocations(this->mock);
 
   for (const auto& alloc : cache_allocs) {
     // Out of some block

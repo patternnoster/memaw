@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -57,4 +58,22 @@ private:
 
   std::unique_ptr<std::byte[]> memory_;
   std::byte* next_ptr_ = nullptr;
+};
+
+/**
+ * @brief A base for advanced multithreaded resource tests
+ **/
+class resource_multithreaded_test: public resource_test_base {
+protected:
+  void mock_allocations(mock_resource&, const size_t count,
+                        const size_t max_size, const size_t min_align);
+
+  void mock_deallocations(mock_resource&);
+
+private:
+  std::unique_ptr<std::byte[]> memory_;
+  std::atomic<std::byte*> next_ptr_;
+
+  std::unique_ptr<allocation[]> blocks_;
+  std::atomic<size_t> last_block_;
 };

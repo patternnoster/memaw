@@ -66,3 +66,39 @@ void resource_test::mock_allocations(mock_resource& mock,
       return reinterpret_cast<void*>(result);
     });
 }
+
+void resource_multithreaded_test::mock_allocations
+  (mock_resource& mock, const size_t count, const size_t max_size,
+   const size_t min_align) {
+  const size_t total_size = count * max_size * 2;
+
+  blocks_ = std::make_unique_for_overwrite<allocation[]>(count);
+  memory_ = std::make_unique_for_overwrite<std::byte[]>(total_size);
+
+  last_block_.store(0);
+  next_ptr_.store(memory_.get());
+
+  EXPECT_CALL(mock, allocate(_, _))
+    .WillRepeatedly([this, min_align](const size_t size,
+                                      const size_t alignment) -> void* {
+      if (rand() % 3 == 0) // Make things more spicy
+        return nullptr;
+
+      // Make this as simple as possible
+      const auto id = last_block_.fetch_add(1, std::memory_order_relaxed);
+
+      const auto real_alignment = nupp::maximum(alignment, min_align);
+
+      const auto next_ptr =
+        next_ptr_.fetch_add(size + real_alignment, std::memory_order_relaxed);
+      const auto result = align_by(next_ptr, real_alignment);
+
+      blocks_[id] = { result, size, alignment };
+      return result;
+    });
+}
+
+void resource_multithreaded_test::mock_deallocations(mock_resource& mock) {
+  allocations = { blocks_.get(), blocks_.get() + last_block_.load() };
+  resource_test_base::mock_deallocations(mock);
+}
