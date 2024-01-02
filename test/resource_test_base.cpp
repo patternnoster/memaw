@@ -102,3 +102,20 @@ void resource_multithreaded_test::mock_deallocations(mock_resource& mock) {
   allocations = { blocks_.get(), blocks_.get() + last_block_.load() };
   resource_test_base::mock_deallocations(mock);
 }
+
+void resource_multithreaded_test::verify_allocations
+  (const std::set<allocation>& test_allocs) noexcept {
+  for (const auto& alloc : test_allocs) {
+    // Out of some block
+    bool found_block = false;
+    for (const auto& b : this->allocations) {
+      if (b.ptr <= alloc.ptr
+          && ((std::byte*)b.ptr + b.size)
+             >= ((std::byte*)alloc.ptr + alloc.size)) {
+        found_block = true;
+        break;
+      }
+    }
+    EXPECT_TRUE(found_block);
+  }
+}

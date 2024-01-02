@@ -33,6 +33,17 @@ protected:
     }
   };
 
+  static bool has_intersections(const std::set<allocation>& allocs) noexcept {
+    if (allocs.empty()) return false;
+
+    for (auto it = allocs.begin(), next_it = std::next(it);
+         next_it != allocs.end(); it = next_it, ++next_it)
+      if (uintptr_t(next_it->ptr) < (uintptr_t(it->ptr) + it->size))
+        return true;
+
+    return false;
+  }
+
   std::set<allocation> allocations;
 };
 
@@ -69,6 +80,12 @@ protected:
                         const size_t max_size, const size_t min_align);
 
   void mock_deallocations(mock_resource&);
+
+  /**
+   * @brief Makes sure every allocation in the provided set is a part
+   *        of some block
+   **/
+  void verify_allocations(const std::set<allocation>&) noexcept;
 
 private:
   std::unique_ptr<std::byte[]> memory_;

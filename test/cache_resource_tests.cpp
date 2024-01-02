@@ -404,7 +404,10 @@ template <typename T>
 class CacheResourceThreadingTests: public resource_multithreaded_test,
                                    public CacheResourceTestsBase<T> {
 protected:
-  void deallocate_all() noexcept {
+  void deallocate_all(const std::set<allocation>& allocs) noexcept {
+    mock_deallocations(this->mock);
+    verify_allocations(allocs);
+
     this->test_cache.reset();
     EXPECT_EQ(allocations.size(), 0);
   }
@@ -485,28 +488,7 @@ TYPED_TEST(CacheResourceThreadingTests, randomized_multithread) {
       cache_allocs.insert(alloc);
 
   ASSERT_EQ(cache_allocs.size(), count);
+  ASSERT_FALSE(this->has_intersections(cache_allocs));
 
-  auto it = cache_allocs.begin();
-  for (auto next_it = std::next(it); next_it != cache_allocs.end();
-       ++it, ++next_it) { // No intersection
-    EXPECT_GE(uintptr_t(next_it->ptr), (uintptr_t(it->ptr) + it->size));
-  }
-
-  this->mock_deallocations(this->mock);
-
-  for (const auto& alloc : cache_allocs) {
-    // Out of some block
-    bool found_block = false;
-    for (const auto& b : this->allocations) {
-      if (b.ptr <= alloc.ptr
-          && ((std::byte*)b.ptr + b.size)
-              >= ((std::byte*)alloc.ptr + alloc.size)) {
-        found_block = true;
-        break;
-      }
-    }
-    EXPECT_TRUE(found_block);
-  }
-
-  this->deallocate_all();
+  this->deallocate_all(cache_allocs);
 }
