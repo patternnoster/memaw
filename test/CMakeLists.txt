@@ -5,6 +5,7 @@ add_executable(memaw_tests
   chain_resource_tests.cpp
   os_resource_tests.cpp
   pages_resource_tests.cpp
+  pool_resource_tests.cpp
   resource_common_tests.cpp
 
   resource_test_base.cpp
