@@ -1,10 +1,14 @@
+#include <bit>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <memory>
+#include <nupp/algorithm.hpp>
+#include <set>
 
 #include "memaw/concepts.hpp"
 #include "memaw/literals.hpp"
 #include "memaw/pool_resource.hpp"
+#include "memaw/resource_traits.hpp"
 
 #include "resource_test_base.hpp"
 #include "test_resource.hpp"
@@ -80,6 +84,17 @@ class PoolResourceTestsBase: public testing::Test {
 protected:
   using upstream_t = T::upstream_t;
 
+  /**
+   * @note Can return zero for no-arg (processed below)
+   **/
+  constexpr static size_t get_rand_alignment
+    (const pow2_t max = T::config.min_chunk_size,
+     const bool allow_zero = true) noexcept {
+    const size_t result = rand() % (max.log2() + 1 + int(allow_zero));
+    if (allow_zero && !result) return 0;
+    return size_t(1) << (result - int(allow_zero));
+  }
+
   void SetUp() {
     test_pool = std::make_shared<T>(mock);
   }
@@ -90,7 +105,64 @@ protected:
 
 template <typename T>
 class PoolResourceTests: public resource_test,
-                         public PoolResourceTestsBase<T> {};
+                         public PoolResourceTestsBase<T> {
+protected:
+  using upstream_t = T::upstream_t;
+
+  using PoolResourceTestsBase<T>::get_rand_alignment;
+
+  static size_t get_upstream_alloc_size() noexcept {
+    return
+      resource_traits<upstream_t>::ceil_allocation_size
+        (T::config.max_chunk_size * T::config.chunk_size_multiplier);
+  }
+
+  static pow2_t get_upstream_alignment() noexcept {
+    return
+      nupp::maximum(T::config.min_chunk_size,
+                    resource_traits<upstream_t>::guaranteed_alignment());
+  }
+
+  static pow2_t get_chunk_alignment(const size_t idx) noexcept {
+    return
+      nupp::minimum(pow2_t{} << std::countr_zero(T::chunk_sizes[idx]),
+                    get_upstream_alignment());
+  }
+
+  static size_t get_rand_chunk_alignment(const size_t idx) noexcept {
+    return get_rand_alignment(get_chunk_alignment(idx));
+  }
+
+  void mock_upstream_alloc(const size_t count) noexcept {
+    std::deque<allocation_request> allocs
+      (count, { .size = this->get_upstream_alloc_size(),
+                .alignment = T::config.min_chunk_size });
+
+    mock_allocations(this->mock, std::move(allocs),
+                     T::upstream_t::params.alignment);
+  }
+
+  void make_alloc(const size_t size, const pow2_t expected_alignment,
+                  const size_t requested_alignment = 0) {
+    void* result;
+
+    if (requested_alignment)
+      result = this->test_pool->allocate(size, requested_alignment);
+    else
+      result = this->test_pool->allocate(size);
+
+    EXPECT_NE(result, nullptr);
+    EXPECT_EQ(result, this->align_by(result, expected_alignment));
+
+    pool_allocations.emplace(result, size, requested_alignment);
+  }
+
+  void deallocate_all() {
+    // Deallocate in random order
+  }
+
+  std::set<allocation> pool_allocations;
+};
 
 using PoolResources =
   testing::Types<pool1_t<upstream1_t>, pool1_t<upstream2_t>,
@@ -122,4 +194,26 @@ TYPED_TEST(PoolResourceTests, concepts) {
   EXPECT_EQ(thread_safe_resource<TypeParam>,
             (TypeParam::config.thread_safe
              && thread_safe_resource<typename TypeParam::upstream_t>));
+}
+
+TYPED_TEST(PoolResourceTests, allocation) {
+  constexpr auto& chunk_sizes = TypeParam::chunk_sizes;
+
+  this->mock_upstream_alloc(1);
+
+  auto left_in_block = this->get_upstream_alloc_size();
+  do {
+    for (auto it = chunk_sizes.begin(); it != chunk_sizes.end(); ++it) {
+      if (left_in_block < *it) break;
+      const size_t idx = std::distance(chunk_sizes.begin(), it);
+      this->make_alloc(*it, this->get_chunk_alignment(idx),
+                       this->get_rand_chunk_alignment(idx));
+      left_in_block-= *it;
+    }
+  }
+  while (left_in_block >= TypeParam::config.min_chunk_size);
+  EXPECT_EQ(this->allocations.size(), 1);
+
+  ASSERT_FALSE(this->has_intersections(this->pool_allocations));
+  this->deallocate_all();
 }
