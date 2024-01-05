@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 
+#include "memaw/concepts.hpp"
 #include "memaw/literals.hpp"
 #include "memaw/pool_resource.hpp"
 
@@ -101,3 +102,24 @@ using PoolResources =
                  pool2_t<upstream1_t, false>, pool2_t<upstream2_t, false>,
                  pool2_t<upstream3_t, false>, pool2_t<upstream4_t, false>>;
 TYPED_TEST_SUITE(PoolResourceTests, PoolResources);
+
+TYPED_TEST(PoolResourceTests, concepts) {
+  EXPECT_TRUE(resource<TypeParam>);
+  EXPECT_TRUE(nothrow_resource<TypeParam>);
+  EXPECT_TRUE(bound_resource<TypeParam>);
+  EXPECT_TRUE(granular_resource<TypeParam>);
+  EXPECT_TRUE(sweeping_resource<TypeParam>);
+
+  if constexpr (TypeParam::config.min_chunk_size > alignof(std::max_align_t)) {
+    EXPECT_TRUE(overaligning_resource<TypeParam>);
+    EXPECT_EQ(TypeParam::guaranteed_alignment(),
+              TypeParam::config.min_chunk_size);
+  }
+  else {
+    EXPECT_FALSE(overaligning_resource<TypeParam>);
+  }
+
+  EXPECT_EQ(thread_safe_resource<TypeParam>,
+            (TypeParam::config.thread_safe
+             && thread_safe_resource<typename TypeParam::upstream_t>));
+}
