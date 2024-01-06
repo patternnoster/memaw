@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <nupp/algorithm.hpp>
+#include <optional>
 #include <set>
 
 #include "memaw/concepts.hpp"
@@ -107,9 +108,19 @@ template <typename T>
 class PoolResourceTests: public resource_test,
                          public PoolResourceTestsBase<T> {
 protected:
+  using chunk_sizes_t = std::array<size_t, T::chunk_sizes.size()>;
   using upstream_t = T::upstream_t;
 
   using PoolResourceTestsBase<T>::get_rand_alignment;
+
+  constexpr void distribute_size(chunk_sizes_t& sizes, size_t size) noexcept {
+    for (size_t chunk_id = sizes.size(); chunk_id > 0;) {
+      --chunk_id;
+      const auto count = size / T::chunk_sizes[chunk_id];
+      sizes[chunk_id]+= count;
+      size-= count * T::chunk_sizes[chunk_id];
+    }
+  }
 
   static size_t get_upstream_alloc_size() noexcept {
     return
@@ -123,6 +134,12 @@ protected:
                     resource_traits<upstream_t>::guaranteed_alignment());
   }
 
+  static size_t get_capacity(const size_t allocs) noexcept {
+    return allocs
+      * (get_upstream_alloc_size() - (get_upstream_alloc_size()
+                                      % T::config.min_chunk_size));
+  }
+
   static pow2_t get_chunk_alignment(const size_t idx) noexcept {
     return
       nupp::minimum(pow2_t{} << std::countr_zero(T::chunk_sizes[idx]),
@@ -131,6 +148,36 @@ protected:
 
   static size_t get_rand_chunk_alignment(const size_t idx) noexcept {
     return get_rand_alignment(get_chunk_alignment(idx));
+  }
+
+  constexpr std::optional<size_t> get_rand_chunk_id
+  (chunk_sizes_t& sizes, size_t& upstream_allocs) noexcept {
+    for (;;) {
+      const size_t id = rand() % sizes.size();
+      if (!sizes[id]) {
+        for (size_t borrow_id = id + 1; borrow_id < sizes.size(); ++borrow_id) {
+          if (sizes[borrow_id]) {
+            --sizes[borrow_id];
+            distribute_size(sizes,
+                            T::chunk_sizes[borrow_id] - T::chunk_sizes[id]);
+            return { id };
+          }
+        }
+
+        // Couldn't borrow for this random size
+        if (upstream_allocs) {
+          --upstream_allocs;
+          distribute_size(sizes,
+                          this->get_upstream_alloc_size() - T::chunk_sizes[id]);
+          return { id };
+        }
+        else if (id == 0) return {};
+      }
+      else {
+        --sizes[id];
+        return { id };
+      }
+    }
   }
 
   void mock_upstream_alloc(const size_t count) noexcept {
@@ -211,9 +258,11 @@ TYPED_TEST(PoolResourceTests, concepts) {
 }
 
 TYPED_TEST(PoolResourceTests, allocation) {
+  constexpr size_t rand_allocs = 20;
+
   constexpr auto& chunk_sizes = TypeParam::chunk_sizes;
 
-  this->mock_upstream_alloc(2);
+  this->mock_upstream_alloc(rand_allocs + 2);
 
   // Descending
   auto left_in_block = this->get_upstream_alloc_size();
@@ -242,6 +291,23 @@ TYPED_TEST(PoolResourceTests, allocation) {
   }
   while (left_in_block >= TypeParam::config.min_chunk_size);
   EXPECT_EQ(this->allocations.size(), 2);
+
+  // Randomized
+  typename PoolResourceTests<TypeParam>::chunk_sizes_t sizes = {};
+  size_t upstream_allocs = rand_allocs;
+
+  left_in_block = this->get_capacity(rand_allocs);
+  for (;;) {
+    const auto rand_id = this->get_rand_chunk_id(sizes, upstream_allocs);
+    if (!rand_id) break;
+
+    this->make_alloc(chunk_sizes[*rand_id],
+                     this->get_chunk_alignment(*rand_id),
+                     this->get_rand_chunk_alignment(*rand_id));
+    left_in_block-= chunk_sizes[*rand_id];
+  }
+  EXPECT_EQ(this->allocations.size(), rand_allocs + 2);
+  EXPECT_LT(left_in_block, TypeParam::config.min_chunk_size);
 
   ASSERT_FALSE(this->has_intersections(this->pool_allocations));
   this->deallocate_all();
