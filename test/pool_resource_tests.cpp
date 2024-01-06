@@ -312,3 +312,73 @@ TYPED_TEST(PoolResourceTests, allocation) {
   ASSERT_FALSE(this->has_intersections(this->pool_allocations));
   this->deallocate_all();
 }
+
+TYPED_TEST(PoolResourceTests, allocation_corner) {
+  constexpr size_t rand_allocs = 20;
+
+  constexpr auto& chunk_sizes = TypeParam::chunk_sizes;
+  constexpr auto min_chunk_size = TypeParam::config.min_chunk_size;
+
+  this->mock_upstream_alloc(rand_allocs);
+
+  typename PoolResourceTests<TypeParam>::chunk_sizes_t sizes = {};
+  size_t upstream_allocs = rand_allocs;
+  size_t left_in_block = this->get_capacity(rand_allocs);
+  for (;;) {
+    const auto rand_id = this->get_rand_chunk_id(sizes, upstream_allocs);
+    if (!rand_id) break;  // No more memory
+
+    const auto chunk_id = *rand_id;
+    const auto chunk_alignment = this->get_chunk_alignment(chunk_id);
+
+    if (chunk_id == 0 || (rand() % 3) == 1) {
+      // We will either request this size with an affordable
+      // alignment...
+      const auto alignment = this->get_rand_alignment(chunk_alignment, false);
+
+      // TODO: optionally leave some out
+      const size_t extra_chunks = chunk_id == 0 ? 1
+        : (chunk_sizes[chunk_id] - chunk_sizes[chunk_id - 1]) / min_chunk_size;
+      const size_t to_leave = rand() % extra_chunks;
+      const size_t size = chunk_sizes[chunk_id] - to_leave * min_chunk_size;
+
+      this->make_alloc(size, pow2_t{alignment}, alignment);
+      left_in_block-= size;
+      sizes[0]+= to_leave;
+    }
+    else {
+      // ... or request a smaller size with a bigger alignment
+      const auto req_chunk_id = rand() % chunk_id;
+
+      const auto min_padding =
+        chunk_sizes[chunk_id - 1] - chunk_sizes[req_chunk_id] + 1;
+      const auto max_padding =
+        chunk_sizes[chunk_id] - chunk_sizes[req_chunk_id];
+
+      const auto min_req_alignment =
+        pow2_t{std::bit_ceil(min_padding
+                             + this->get_chunk_alignment(chunk_id-1))};
+      const auto max_req_alignment =
+        pow2_t{std::bit_floor(max_padding
+                              + this->get_chunk_alignment(chunk_id))};
+
+      const auto alignment = min_req_alignment *
+        this->get_rand_alignment(max_req_alignment / min_req_alignment, false);
+
+      this->make_alloc(chunk_sizes[req_chunk_id], pow2_t{alignment}, alignment);
+
+      // To be safe we'll distribute padding into the smallest chunks
+      const auto real_padding =
+        chunk_sizes[chunk_id] - chunk_sizes[req_chunk_id];
+      sizes[0]+= real_padding / chunk_sizes[0];
+
+      left_in_block-= chunk_sizes[req_chunk_id];
+    }
+  }
+  EXPECT_EQ(this->allocations.size(), rand_allocs);
+  EXPECT_LT(left_in_block, TypeParam::config.min_chunk_size);
+
+  // Finalize
+  ASSERT_FALSE(this->has_intersections(this->pool_allocations));
+  this->deallocate_all();
+}
