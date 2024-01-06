@@ -159,6 +159,20 @@ protected:
 
   void deallocate_all() {
     // Deallocate in random order
+    while (!pool_allocations.empty()) {
+      const auto it = std::next(pool_allocations.begin(),
+                                rand() % pool_allocations.size());
+      if (it->alignment)
+        this->test_pool->deallocate(it->ptr, it->size, it->alignment);
+      else
+        this->test_pool->deallocate(it->ptr, it->size);
+
+      pool_allocations.erase(it);
+    }
+
+    mock_deallocations(this->mock);
+    this->test_pool.reset();  // Call the destructor now
+    EXPECT_EQ(allocations.size(), 0);
   }
 
   std::set<allocation> pool_allocations;
@@ -199,9 +213,24 @@ TYPED_TEST(PoolResourceTests, concepts) {
 TYPED_TEST(PoolResourceTests, allocation) {
   constexpr auto& chunk_sizes = TypeParam::chunk_sizes;
 
-  this->mock_upstream_alloc(1);
+  this->mock_upstream_alloc(2);
 
+  // Descending
   auto left_in_block = this->get_upstream_alloc_size();
+  do {
+    for (auto rit = chunk_sizes.rbegin(); rit != chunk_sizes.rend(); ++rit) {
+      if (left_in_block < *rit) continue;
+      const size_t idx = std::distance(rit, chunk_sizes.rend()) - 1;
+      this->make_alloc(*rit, this->get_chunk_alignment(idx),
+                       this->get_rand_chunk_alignment(idx));
+      left_in_block-= *rit;
+    }
+  }
+  while (left_in_block >= TypeParam::config.min_chunk_size);
+  EXPECT_EQ(this->allocations.size(), 1);
+
+  // Ascending
+  left_in_block = this->get_upstream_alloc_size();
   do {
     for (auto it = chunk_sizes.begin(); it != chunk_sizes.end(); ++it) {
       if (left_in_block < *it) break;
@@ -212,7 +241,7 @@ TYPED_TEST(PoolResourceTests, allocation) {
     }
   }
   while (left_in_block >= TypeParam::config.min_chunk_size);
-  EXPECT_EQ(this->allocations.size(), 1);
+  EXPECT_EQ(this->allocations.size(), 2);
 
   ASSERT_FALSE(this->has_intersections(this->pool_allocations));
   this->deallocate_all();
