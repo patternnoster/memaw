@@ -5,6 +5,7 @@
 #include <nupp/algorithm.hpp>
 #include <optional>
 #include <set>
+#include <vector>
 
 #include "memaw/concepts.hpp"
 #include "memaw/literals.hpp"
@@ -16,7 +17,9 @@
 
 using namespace memaw;
 
+using testing::_;
 using testing::ElementsAre;
+using testing::Return;
 
 TEST(PoolResourceStaticTests, chunk_sizes) {
   using upstream_t = test_resource<resource_params{ .is_sweeping = true }>;
@@ -180,10 +183,12 @@ protected:
     }
   }
 
-  void mock_upstream_alloc(const size_t count) noexcept {
+  void mock_upstream_alloc(const size_t count,
+                           std::vector<allocation_request> adds = {}) noexcept {
     std::deque<allocation_request> allocs
       (count, { .size = this->get_upstream_alloc_size(),
                 .alignment = T::config.min_chunk_size });
+    for (auto add : adds) allocs.push_back(add);
 
     mock_allocations(this->mock, std::move(allocs),
                      T::upstream_t::params.alignment);
@@ -314,13 +319,49 @@ TYPED_TEST(PoolResourceTests, allocation) {
 }
 
 TYPED_TEST(PoolResourceTests, allocation_corner) {
+  using upstream_traits = resource_traits<typename TypeParam::upstream_t>;
+
   constexpr size_t rand_allocs = 20;
 
   constexpr auto& chunk_sizes = TypeParam::chunk_sizes;
   constexpr auto min_chunk_size = TypeParam::config.min_chunk_size;
 
-  this->mock_upstream_alloc(rand_allocs);
+  constexpr auto max_size =
+    TypeParam::config.max_chunk_size * TypeParam::config.chunk_size_multiplier;
+  const auto bigger_size = max_size + TypeParam::config.min_chunk_size;
+  const auto extra_alloc_size = resource_test::allocation_request{
+    .size = upstream_traits::ceil_allocation_size(bigger_size),
+    .alignment = min_chunk_size
+  };
 
+  const auto max_alignment = this->get_upstream_alignment();
+  const auto bigger_alignment = max_alignment << 1;
+  const auto extra_alloc_alignment = resource_test::allocation_request{
+    .size = upstream_traits
+            ::ceil_allocation_size(max_size + bigger_alignment - max_alignment),
+    .alignment = min_chunk_size
+  };
+
+  this->mock_upstream_alloc(rand_allocs + 2,
+                            std::vector{extra_alloc_size,
+                                        extra_alloc_alignment});
+
+  // First allocate for real and drain with the smallest ones
+  for (size_t left_in_block = this->get_upstream_alloc_size();
+       left_in_block >= min_chunk_size; left_in_block-= min_chunk_size)
+    this->make_alloc(min_chunk_size, min_chunk_size,
+                     this->get_rand_alignment());
+
+  // Now try with nullptr returned
+  EXPECT_CALL(this->mock, allocate(_, _)).Times(int(chunk_sizes.size()))
+    .WillRepeatedly(Return(nullptr)).RetiresOnSaturation();
+
+  for (const auto& size : chunk_sizes)
+    EXPECT_EQ(this->test_pool->allocate(size), nullptr);
+
+  EXPECT_EQ(this->allocations.size(), 1);
+
+  // Now try unusual alignments that may force bigger blocks
   typename PoolResourceTests<TypeParam>::chunk_sizes_t sizes = {};
   size_t upstream_allocs = rand_allocs;
   size_t left_in_block = this->get_capacity(rand_allocs);
@@ -375,8 +416,33 @@ TYPED_TEST(PoolResourceTests, allocation_corner) {
       left_in_block-= chunk_sizes[req_chunk_id];
     }
   }
-  EXPECT_EQ(this->allocations.size(), rand_allocs);
+  EXPECT_EQ(this->allocations.size(), rand_allocs + 1);
   EXPECT_LT(left_in_block, TypeParam::config.min_chunk_size);
+
+  // Allow one more real allocation
+  this->make_alloc(min_chunk_size, min_chunk_size);
+  EXPECT_EQ(this->allocations.size(), rand_allocs + 2);
+  left_in_block = this->get_upstream_alloc_size() -
+    (this->get_upstream_alloc_size() % min_chunk_size) - min_chunk_size;
+
+  // Now allocate bigger size than max
+  this->make_alloc(bigger_size, min_chunk_size);
+  EXPECT_EQ(this->allocations.size(), rand_allocs + 3);
+  left_in_block+= extra_alloc_size.size - bigger_size
+    - (extra_alloc_size.size % min_chunk_size);
+
+  // Now max size but bigger alignment than max
+  this->make_alloc(max_size, bigger_alignment, bigger_alignment);
+  EXPECT_EQ(this->allocations.size(), rand_allocs + 4);
+  left_in_block+= extra_alloc_alignment.size - max_size
+    - (extra_alloc_alignment.size % min_chunk_size);
+
+  // Now drain and make sure we didn't waste too much memory
+  while (left_in_block >= min_chunk_size) {
+    this->make_alloc(min_chunk_size, min_chunk_size);
+    left_in_block-= min_chunk_size;
+  }
+  EXPECT_EQ(this->allocations.size(), rand_allocs + 4);
 
   // Finalize
   ASSERT_FALSE(this->has_intersections(this->pool_allocations));
