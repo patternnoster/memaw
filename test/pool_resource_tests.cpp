@@ -448,3 +448,59 @@ TYPED_TEST(PoolResourceTests, allocation_corner) {
   ASSERT_FALSE(this->has_intersections(this->pool_allocations));
   this->deallocate_all();
 }
+
+TYPED_TEST(PoolResourceTests, deallocation) {
+  constexpr size_t rand_allocs = 50;
+  constexpr size_t deallocs = 1000;
+
+  constexpr auto& chunk_sizes = TypeParam::chunk_sizes;
+  constexpr auto min_chunk_size = TypeParam::config.min_chunk_size;
+
+  this->mock_upstream_alloc(rand_allocs);
+
+  typename PoolResourceTests<TypeParam>::chunk_sizes_t sizes = {};
+  size_t upstream_allocs = rand_allocs;
+  size_t left_in_block = this->get_capacity(rand_allocs);
+
+  size_t made_deallocs = 0;
+  while (left_in_block > min_chunk_size || made_deallocs < deallocs) {
+    // We'll do a regular allocation
+    const auto rand_id = this->get_rand_chunk_id(sizes, upstream_allocs);
+
+    // Do we deallocate first?
+    if (made_deallocs < deallocs && !this->pool_allocations.empty()
+        && (!rand_id || rand() % 10 == 1)) {
+      const auto dit = std::next(this->pool_allocations.begin(),
+                                 rand() % this->pool_allocations.size());
+      auto dit_end = std::next(dit);
+
+      // Also throw in some sweeping deallocs if possible
+      this->distribute_size(sizes, dit->size);
+      size_t size = dit->size;
+      while (dit_end != this->pool_allocations.end()
+             && uintptr_t(dit_end->ptr) == uintptr_t(dit->ptr) + dit->size
+             && (rand() % 2 == 1)) {
+        this->distribute_size(sizes, dit_end->size);
+        size+= dit_end->size;
+        ++dit_end;
+      }
+
+      this->test_pool->deallocate(dit->ptr, size, dit->alignment);
+      this->pool_allocations.erase(dit, dit_end);
+      left_in_block+= size;
+      ++made_deallocs;
+    }
+
+    if (rand_id) {
+      // Regular allocation
+      this->make_alloc(chunk_sizes[*rand_id],
+                       this->get_chunk_alignment(*rand_id),
+                       this->get_rand_chunk_alignment(*rand_id));
+      left_in_block-= chunk_sizes[*rand_id];
+    }
+  }
+
+  EXPECT_EQ(this->allocations.size(), rand_allocs);
+  ASSERT_FALSE(this->has_intersections(this->pool_allocations));
+  this->deallocate_all();
+}
