@@ -451,6 +451,7 @@ TYPED_TEST(PoolResourceTests, allocation_corner) {
 
 TYPED_TEST(PoolResourceTests, deallocation) {
   constexpr size_t rand_allocs = 50;
+  constexpr size_t bigger_than_max_allocs = 10;
   constexpr size_t deallocs = 1000;
 
   constexpr auto& chunk_sizes = TypeParam::chunk_sizes;
@@ -463,7 +464,26 @@ TYPED_TEST(PoolResourceTests, deallocation) {
   size_t left_in_block = this->get_capacity(rand_allocs);
 
   size_t made_deallocs = 0;
+  size_t made_bigger_than_max = 0;
   while (left_in_block > min_chunk_size || made_deallocs < deallocs) {
+    // We may throw in some bigger-than-max allocations to make this
+    // even more interesting
+    if (made_bigger_than_max < bigger_than_max_allocs
+        && upstream_allocs && rand() % rand_allocs == 0) {
+      const auto min_alloc = chunk_sizes.back() + chunk_sizes[0];
+      const auto max_alloc = this->get_upstream_alloc_size();
+      size_t size = min_alloc + rand() % (max_alloc - min_alloc);
+      size-= size % chunk_sizes[0];
+
+      this->make_alloc(size, min_chunk_size, min_chunk_size);
+      this->distribute_size(sizes, max_alloc - size);
+      left_in_block-= size;
+
+      --upstream_allocs;
+      ++made_bigger_than_max;
+      continue;
+    }
+
     // We'll do a regular allocation
     const auto rand_id = this->get_rand_chunk_id(sizes, upstream_allocs);
 
