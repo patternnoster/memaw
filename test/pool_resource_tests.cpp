@@ -1,10 +1,12 @@
 #include <bit>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <latch>
 #include <memory>
 #include <nupp/algorithm.hpp>
 #include <optional>
 #include <set>
+#include <thread>
 #include <vector>
 
 #include "memaw/concepts.hpp"
@@ -99,6 +101,18 @@ protected:
     return size_t(1) << (result - int(allow_zero));
   }
 
+  static size_t get_upstream_alloc_size() noexcept {
+    return
+      resource_traits<upstream_t>::ceil_allocation_size
+        (T::config.max_chunk_size * T::config.chunk_size_multiplier);
+  }
+
+  static pow2_t get_upstream_alignment() noexcept {
+    return
+      nupp::maximum(T::config.min_chunk_size,
+                    resource_traits<upstream_t>::guaranteed_alignment());
+  }
+
   void SetUp() {
     test_pool = std::make_shared<T>(mock);
   }
@@ -112,9 +126,10 @@ class PoolResourceTests: public resource_test,
                          public PoolResourceTestsBase<T> {
 protected:
   using chunk_sizes_t = std::array<size_t, T::chunk_sizes.size()>;
-  using upstream_t = T::upstream_t;
 
   using PoolResourceTestsBase<T>::get_rand_alignment;
+  using PoolResourceTestsBase<T>::get_upstream_alloc_size;
+  using PoolResourceTestsBase<T>::get_upstream_alignment;
 
   constexpr void distribute_size(chunk_sizes_t& sizes, size_t size) noexcept {
     for (size_t chunk_id = sizes.size(); chunk_id > 0;) {
@@ -123,18 +138,6 @@ protected:
       sizes[chunk_id]+= count;
       size-= count * T::chunk_sizes[chunk_id];
     }
-  }
-
-  static size_t get_upstream_alloc_size() noexcept {
-    return
-      resource_traits<upstream_t>::ceil_allocation_size
-        (T::config.max_chunk_size * T::config.chunk_size_multiplier);
-  }
-
-  static pow2_t get_upstream_alignment() noexcept {
-    return
-      nupp::maximum(T::config.min_chunk_size,
-                    resource_traits<upstream_t>::guaranteed_alignment());
   }
 
   static size_t get_capacity(const size_t allocs) noexcept {
@@ -523,4 +526,79 @@ TYPED_TEST(PoolResourceTests, deallocation) {
   EXPECT_EQ(this->allocations.size(), rand_allocs);
   ASSERT_FALSE(this->has_intersections(this->pool_allocations));
   this->deallocate_all();
+}
+
+template <typename T>
+class PoolResourceThreadingTests: public resource_multithreaded_test,
+                                  public PoolResourceTestsBase<T> {};
+
+using ThreadSafePoolResources =
+  testing::Types<pool1_t<upstream1_t>, pool1_t<upstream2_t>,
+                 pool1_t<upstream3_t>,
+                 pool2_t<upstream1_t>, pool2_t<upstream2_t>,
+                 pool2_t<upstream3_t>>;
+TYPED_TEST_SUITE(PoolResourceThreadingTests, ThreadSafePoolResources);
+
+TYPED_TEST(PoolResourceThreadingTests, randomized_multithread) {
+  using allocation = PoolResourceTests<TypeParam>::allocation;
+
+  constexpr size_t threads_count = 8;
+  constexpr static size_t allocs_per_thread = 1000;
+
+  constexpr auto& chunk_sizes = TypeParam::chunk_sizes;
+  constexpr static size_t min_alloc = chunk_sizes[0];
+  constexpr static size_t max_alloc = chunk_sizes.back() * 2;
+
+  const static pow2_t max_alignment =
+    pow2_t{std::bit_ceil(this->get_upstream_alloc_size())};
+
+  constexpr size_t count = threads_count * allocs_per_thread;
+  this->mock_allocations
+    (this->mock, count * 10, this->get_upstream_alloc_size(),
+     resource_traits<typename TypeParam::upstream_t>::guaranteed_alignment());
+
+  std::latch latch(threads_count);
+
+  std::array<std::vector<allocation>, threads_count> allocs;
+
+  std::vector<std::thread> threads;
+  threads.reserve(threads_count);
+
+  for (size_t i = 0; i < threads_count; ++i)
+    threads.emplace_back([this, &latch, &allocs](const size_t id) {
+      latch.arrive_and_wait();  // All threads start at the same time
+
+      std::vector<allocation> local_allocs;
+
+      size_t allocs_num = 0;
+      while (allocs_num < allocs_per_thread || !local_allocs.empty()) {
+        if (allocs_num < allocs_per_thread && (rand() % 2)) {
+          // Allocate
+          auto size = min_alloc + rand() % (max_alloc - min_alloc);
+          size-= size % TypeParam::config.min_chunk_size;
+
+          const auto alignment = this->get_rand_alignment(max_alignment, false);
+
+          const auto result = this->test_pool->allocate(size, alignment);
+          if (result) {
+            EXPECT_EQ(result, (this->align_by(result, alignment)));
+            local_allocs.emplace_back(result, size, alignment);
+            ++allocs_num;
+          }
+        }
+        else if (!local_allocs.empty()) {
+          // Deallocate
+          const auto it = local_allocs.begin() + (rand() % local_allocs.size());
+          this->test_pool->deallocate(it->ptr, it->size, it->alignment);
+
+          // Remember in the global, remove from local
+          allocs[id].push_back(*it);
+          std::swap(*it, local_allocs.back());
+          local_allocs.pop_back();
+        }
+      }
+    }, i);
+
+  // Wait for threads to complete
+  for (auto& t : threads) t.join();
 }
