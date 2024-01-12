@@ -530,7 +530,32 @@ TYPED_TEST(PoolResourceTests, deallocation) {
 
 template <typename T>
 class PoolResourceThreadingTests: public resource_multithreaded_test,
-                                  public PoolResourceTestsBase<T> {};
+                                  public PoolResourceTestsBase<T> {
+protected:
+  struct marked_allocation {
+    allocation alloc;
+    uint64_t mark;
+
+    bool operator<(const marked_allocation& rhs) const noexcept {
+      return alloc.ptr < rhs.alloc.ptr
+        || (alloc.ptr == rhs.alloc.ptr
+            && (alloc.size < rhs.alloc.size
+                || (alloc.size == rhs.alloc.size && mark < rhs.mark)));
+    }
+  };
+
+  void deallocate_all(const std::set<marked_allocation>& allocs) noexcept {
+    mock_deallocations(this->mock);
+
+    std::set<allocation> smallest_allocs;
+    for (const auto& alloc : allocs)
+      smallest_allocs.insert(alloc.alloc);
+    verify_allocations(smallest_allocs);
+
+    this->test_pool.reset();
+    EXPECT_EQ(allocations.size(), 0);
+  }
+};
 
 using ThreadSafePoolResources =
   testing::Types<pool1_t<upstream1_t>, pool1_t<upstream2_t>,
@@ -541,6 +566,8 @@ TYPED_TEST_SUITE(PoolResourceThreadingTests, ThreadSafePoolResources);
 
 TYPED_TEST(PoolResourceThreadingTests, randomized_multithread) {
   using allocation = PoolResourceTests<TypeParam>::allocation;
+  using marked_allocation =
+    PoolResourceThreadingTests<TypeParam>::marked_allocation;
 
   constexpr size_t threads_count = 8;
   constexpr static size_t allocs_per_thread = 1000;
@@ -552,6 +579,14 @@ TYPED_TEST(PoolResourceThreadingTests, randomized_multithread) {
   const static pow2_t max_alignment =
     pow2_t{std::bit_ceil(this->get_upstream_alloc_size())};
 
+  // We will use a mark on each chunk near the end to make sure
+  // they're allocated separately
+  constexpr static auto get_mark =
+    [](void* const ptr, const size_t size) -> uint64_t& {
+      return *reinterpret_cast<uint64_t*>(uintptr_t(ptr) + size
+                                          - sizeof(uint64_t));
+    };
+
   constexpr size_t count = threads_count * allocs_per_thread;
   this->mock_allocations
     (this->mock, count * 10, this->get_upstream_alloc_size(),
@@ -559,7 +594,7 @@ TYPED_TEST(PoolResourceThreadingTests, randomized_multithread) {
 
   std::latch latch(threads_count);
 
-  std::array<std::vector<allocation>, threads_count> allocs;
+  std::array<std::vector<marked_allocation>, threads_count> allocs;
 
   std::vector<std::thread> threads;
   threads.reserve(threads_count);
@@ -567,8 +602,7 @@ TYPED_TEST(PoolResourceThreadingTests, randomized_multithread) {
   for (size_t i = 0; i < threads_count; ++i)
     threads.emplace_back([this, &latch, &allocs](const size_t id) {
       latch.arrive_and_wait();  // All threads start at the same time
-
-      std::vector<allocation> local_allocs;
+      std::vector<marked_allocation> local_allocs;
 
       size_t allocs_num = 0;
       while (allocs_num < allocs_per_thread || !local_allocs.empty()) {
@@ -582,14 +616,17 @@ TYPED_TEST(PoolResourceThreadingTests, randomized_multithread) {
           const auto result = this->test_pool->allocate(size, alignment);
           if (result) {
             EXPECT_EQ(result, (this->align_by(result, alignment)));
-            local_allocs.emplace_back(result, size, alignment);
+            local_allocs.emplace_back(allocation{result, size, alignment},
+                                      get_mark(result, size));
             ++allocs_num;
           }
         }
         else if (!local_allocs.empty()) {
           // Deallocate
           const auto it = local_allocs.begin() + (rand() % local_allocs.size());
-          this->test_pool->deallocate(it->ptr, it->size, it->alignment);
+          ++get_mark(it->alloc.ptr, it->alloc.size);
+          this->test_pool->deallocate(it->alloc.ptr, it->alloc.size,
+                                      it->alloc.alignment);
 
           // Remember in the global, remove from local
           allocs[id].push_back(*it);
@@ -601,4 +638,12 @@ TYPED_TEST(PoolResourceThreadingTests, randomized_multithread) {
 
   // Wait for threads to complete
   for (auto& t : threads) t.join();
+
+  std::set<marked_allocation> allocations;
+  for (const auto& vec : allocs)
+    for (const auto& alloc : vec)
+      allocations.insert(alloc);
+
+  EXPECT_EQ(allocations.size(), count);
+  this->deallocate_all(allocations);
 }
