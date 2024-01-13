@@ -51,15 +51,22 @@ public:
 
 private:
   /**
+   * @return the real alignment of any allocation from the upstream
+   **/
+  static pow2_t get_upstream_alignment() noexcept {
+    return nupp::maximum(_cfg.min_chunk_size,
+                         resource_traits<R>::guaranteed_alignment());
+  }
+
+  /**
    * @return the real alignment of any chunk with the given size id
    **/
   static pow2_t get_chunk_alignment(const size_t id) noexcept {
     const auto max_pow2_div = pow2_t{1} << std::countr_zero(chunk_sizes[id]);
-    const auto upstream_alignment =
-      nupp::maximum(_cfg.min_chunk_size,
-                    resource_traits<R>::guaranteed_alignment());
-    return nupp::minimum(max_pow2_div, upstream_alignment);
+    return nupp::minimum(max_pow2_div, get_upstream_alignment());
   }
+
+  inline void* allocate_from_block(void*, size_t, size_t, pow2_t) noexcept;
 
   struct chunk_t {
     chunk_t* next;
@@ -100,6 +107,26 @@ consteval auto pool_resource_impl<R, _cfg>::get_chunk_sizes() noexcept {
 }
 
 template <sweeping_resource R, auto _cfg>
+void* pool_resource_impl<R, _cfg>::allocate_from_block
+  (void* const block_ptr, const size_t block_size,
+   const size_t size, const pow2_t alignment) noexcept {
+  // Assumption: the block_size is enough to contain size including
+  // possible alignment padding
+  const auto [result, padding] = align_pointer(block_ptr, alignment);
+
+  // The padding bytes and the tail might be repurposed for further
+  // blocks (since size, alignment and padding are all multiples of
+  // min_chunk_size)
+
+  if (padding) deallocate(uintptr_t(block_ptr), padding);
+
+  const auto left = block_size - padding - size;
+  if (left) deallocate(result + size, left);
+
+  return reinterpret_cast<void*>(result);
+}
+
+template <sweeping_resource R, auto _cfg>
 void* pool_resource_impl<R, _cfg>::allocate(const size_t size,
                                             const pow2_t alignment) noexcept {
   if (size % _cfg.min_chunk_size) [[unlikely]] return nullptr;
@@ -121,13 +148,8 @@ void* pool_resource_impl<R, _cfg>::allocate(const size_t size,
           if (auto chunk = chunk_stacks_[stack_id].pop()) {
             // Found our guy
             chunk->~chunk_t();
-
-            const auto [result, padding] = align_pointer(chunk, alignment);
-
-            if (padding) deallocate(uintptr_t(chunk), padding);
-            deallocate(result + size, chunk_sizes[stack_id] - padding - size);
-
-            return reinterpret_cast<void*>(result);
+            return allocate_from_block(chunk, chunk_sizes[stack_id],
+                                       size, alignment);
           }
         }
         while (++stack_id < chunk_stacks_.size());
@@ -136,7 +158,20 @@ void* pool_resource_impl<R, _cfg>::allocate(const size_t size,
     }
   }
 
-  return nullptr;
+  // If got here, we haven't found the proper non-empty
+  // stack. Allocate directly from the upstream
+  const auto max_padding =
+    alignment - nupp::minimum(alignment, get_upstream_alignment());
+
+  const auto req_size =
+    nupp::maximum(max_padding + size,
+                  _cfg.max_chunk_size * _cfg.chunk_size_multiplier);
+
+  const auto [alloc_result, alloc_size] =
+    allocate_at_least<exceptions_policy::nothrow>(upstream_, req_size,
+                                                  _cfg.min_chunk_size);
+  if (!alloc_result) [[unlikely]] return nullptr;
+  return allocate_from_block(alloc_result, alloc_size, size, alignment);
 }
 
 } // namespace memaw::__detail
