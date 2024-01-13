@@ -22,7 +22,7 @@ namespace memaw::__detail {
  **/
 constexpr std::pair<uintptr_t, size_t> align_pointer
   (const auto ptr, const pow2_t alignment) noexcept {
-  const uintptr_t ptr_uint = ptr;
+  const auto ptr_uint = uintptr_t(ptr);
 
   const auto result = (ptr_uint + alignment.get_mask()) & ~alignment.get_mask();
   const auto padding = result - ptr_uint;

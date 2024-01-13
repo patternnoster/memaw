@@ -162,7 +162,7 @@ public:
    **/
   void deallocate(void* const ptr, const size_t size,
                   const size_t = alignof(std::max_align_t)) noexcept {
-    impl_.deallocate(ptr, size);  // NB: alignment param is ignored
+    impl_.deallocate(uintptr_t(ptr), size); // NB: alignment param is ignored
   }
 
   bool operator==(const pool_resource&) const noexcept = default;
