@@ -37,6 +37,8 @@ public:
     noexcept(std::is_nothrow_move_constructible_v<upstream_t>):
     upstream_(std::move(upstream)) {}
 
+  inline ~pool_resource_impl() noexcept;
+
   constexpr pool_resource_impl(pool_resource_impl&& rhs)
     noexcept(std::is_nothrow_move_constructible_v<upstream_t>):
     chunk_stacks_(std::move(rhs.chunk_stacks_)),
@@ -70,6 +72,7 @@ private:
 
   struct chunk_t {
     chunk_t* next;
+    size_t size;  // used in the destructor
   };
   std::array<stack<chunk_t, thread_safety>,
              chunk_sizes.size()> chunk_stacks_ = {};
@@ -229,6 +232,31 @@ void pool_resource_impl<R, _cfg>::deallocate(const uintptr_t ptr,
       lower_ptr+= chunk_size;
       lower_size-= chunk_size;
     }
+  }
+}
+
+template <sweeping_resource R, auto _cfg>
+pool_resource_impl<R, _cfg>::~pool_resource_impl() noexcept {
+  // First sort and merge all the regions from stacks
+  chunk_t* merged_head = nullptr;
+  for (size_t i = 0; i < chunk_stacks_.size(); ++i)
+    merged_head = merge_chunks(chunk_stacks_[i].reset(),
+                               chunk_sizes[i], merged_head);
+
+  // Now deallocate one by one
+  while (merged_head) {
+    // We always request the same alignment, but the real allocation
+    // size can actually be ceilled in case the upstream reasource is
+    // bound or granular
+    const auto size =
+      resource_traits<upstream_t>::ceil_allocation_size(merged_head->size);
+    const auto next_head = merged_head->next;
+    merged_head->~chunk_t();
+
+    memaw::deallocate<exceptions_policy::nothrow>
+      (upstream_, merged_head, size, _cfg.min_chunk_size);
+
+    merged_head = next_head;
   }
 }
 

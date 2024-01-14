@@ -42,13 +42,21 @@ concept free_chunk = requires(C chunk) {
  * @brief Takes a (singly) linked list of memory chunks and merges
  *        consecutive chunks together (increasing the size value if
  *        necessary). Returns the head of the new list.
+ * @param head the list to be sorted
+ * @param fixed_size, if > 0, is used as the size of every chunk in
+ *        the list, otherwise the value is read from the C::size field
+ * @param sorted the part of the list that already went through the
+ *        procedure (if any)
  **/
 template <free_chunk C>
-inline C* merge_chunks(C* const head) noexcept {
-  C* turkish_delight = nullptr;  // "result", but I couldn't resist
+inline C* merge_chunks(C* const head, const size_t fixed_size = 0,
+                       C* const sorted = nullptr) noexcept {
+  C* turkish_delight = sorted;  // "result", but I couldn't resist
 
   for (auto chunk = head; chunk;) {
     const auto chunk_begin = uintptr_t(chunk);
+
+    if (fixed_size) chunk->size = fixed_size;
     const auto chunk_end = chunk_begin + chunk->size;
 
     const auto next_chunk = chunk->next;
