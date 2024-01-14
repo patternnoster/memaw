@@ -43,7 +43,7 @@ public:
     upstream_(std::move(rhs.upstream_)) {}
 
   [[nodiscard]] inline void* allocate(size_t, pow2_t) noexcept;
-  void deallocate(uintptr_t, size_t) noexcept {}
+  inline void deallocate(uintptr_t, size_t) noexcept;
 
   bool operator==(const pool_resource_impl& rhs) const noexcept {
     return this == &rhs;
@@ -172,6 +172,64 @@ void* pool_resource_impl<R, _cfg>::allocate(const size_t size,
                                                   _cfg.min_chunk_size);
   if (!alloc_result) [[unlikely]] return nullptr;
   return allocate_from_block(alloc_result, alloc_size, size, alignment);
+}
+
+template <sweeping_resource R, auto _cfg>
+void pool_resource_impl<R, _cfg>::deallocate(const uintptr_t ptr,
+                                             const size_t size) noexcept {
+  if (!ptr || size < _cfg.min_chunk_size) [[unlikely]]
+    return;  // Don't bother with bad params
+
+  // Break the block [ptr, ptr+size) into stack chunks prioritizing
+  // bigger ones
+  const auto upper_ptr = uintptr_t(ptr);
+  size_t upper_size = 0;
+
+  // First determine the biggest possible size of chunk, taking
+  // alignment into consideration (everything above it is "upper")
+  uintptr_t lower_ptr = upper_ptr;
+  size_t lower_size = size;
+
+  size_t curr_id = 1;
+  for (size_t i = chunk_sizes.size(); i > 1;) {
+    const auto& chunk_size = chunk_sizes[--i];
+    if (chunk_size > size) continue;
+
+    const auto [ptr, padding] = align_pointer(upper_ptr,
+                                              get_chunk_alignment(i));
+    if (chunk_size + padding <= size) {
+      // Found it
+      upper_size = padding;
+      lower_size-= padding;
+
+      lower_ptr = ptr;
+      curr_id = i + 1;
+      break;
+    }
+  }
+
+  // Now go through remaining stacks: we can add some chunks from the
+  // upper and some from the lower part
+  for (size_t i = curr_id; i > 0;) {
+    const auto& chunk_size = chunk_sizes[--i];
+
+    // Upper part: go from the bottom
+    while (upper_size >= chunk_size) {
+      upper_size-= chunk_size;
+      const auto new_chunk =
+        new (reinterpret_cast<void*>(upper_ptr + upper_size)) chunk_t;
+      chunk_stacks_[i].push(new_chunk);
+    }
+
+    // Lower part: go from the top
+    while (lower_size >= chunk_size) {
+      const auto new_chunk = new (reinterpret_cast<void*>(lower_ptr)) chunk_t;
+      chunk_stacks_[i].push(new_chunk);
+
+      lower_ptr+= chunk_size;
+      lower_size-= chunk_size;
+    }
+  }
 }
 
 } // namespace memaw::__detail
