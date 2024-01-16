@@ -25,6 +25,7 @@ The library is still work in progress. See below for the list of features implem
 | [**chain_resource**](#chain_resource) | memory resource adaptor that sequentially tries every resource in a given list until a successful allocation |
 | [**os_resource**](#os_resource) | memory resource that always allocates and frees memory via direct system calls to the OS |
 | [**pages_resource**](#pages_resource) | a wrapper around [**os_resource**](#os_resource), allocating memory directly from the OS using pages of the statically specified size |
+| [**pool_resource**](#pool_resource) | memory resource that maintains lists of chunks of fixed sizes allocated from the upstream resource |
 
 ### Resource aliases
 
@@ -873,6 +874,51 @@ A resource that allocates pages of the given fixed size directly from the OS.
 using regular_pages_resource = pages_resource<page_types::regular>;
 ```
 A resource that allocates pages of regular system size directly from the OS (same as [**os_resource**](#os_resource)).
+
+---
+
+### pool_resource
+<sub>Defined in header [&lt;memaw/pool_resource.hpp&gt;](/include/memaw/pool_resource.hpp)</sub>
+```c++
+template <sweeping_resource R,
+          pool_resource_config _config = pool_resource_config{
+            .thread_safe = thread_safe_resource<R>
+          }>
+class pool_resource;
+```
+Memory resource that maintains lists of chunks of fixed sizes allocated from the upstream resource. Chunks are reused upon deallocation but are not returned to the upstream until this resource is destructed.
+
+#### Member functions
+| Name | Description |
+|---|---|
+| [**allocate**](#pool_resourceallocate) | allocates memory from the pool, calling the upstream **allocate()** if there is not enough left |
+| [**deallocate**](#pool_resourcedeallocate) | deallocates previously allocated chunks and marks them for reuse |
+| [**guaranteed_alignment**](#pool_resourceguaranteed_alignment) | returns the minimal alignment of any address allocated by the pool if its configuration allows that |
+| [**min_size**](#pool_resourcemin_size) | returns the (configured) size of a minimum allocation: any allocation can only request a size that is a multiple of this value |
+| **operator==** | the equality comparison operator only returning true for same instances |
+| [**pool_resource**](#pool_resourcepool_resource) | constructs the pool with the upstream resource default or move-constructed |
+| **~pool_resource** | calls **deallocate()** on the upstream resource for all previously allocated memory |
+
+#### Member types
+
+| Name | Description |
+|---|---|
+| **upstream_t** | the underlying resource to allocate memory from |
+
+#### Constants
+
+| Name | Description |
+|---|---|
+| **chunk_sizes** | the `std::range` of sizes of chunks in the pool |
+| **config** | the configuration parameters of the resource of type [**pool_resource_config**](#pool_resource_config) (template parameter) |
+| **is_granular** | enables [**granular_resource**](#granular_resource) |
+| **is_sweeping** | enables [**sweeping_resource**](#sweeping_resource) |
+| **is_thread_safe** | enables [**thread_safe_resource**](#thread_safe_resource) if [**config.thread_safe**](#pool_resource_configthread_safe) is true and the upstream resource is thread-safe |
+
+#### Helper types
+| Name | Description |
+|---|---|
+| [**pool_resource_config**](#pool_resource_config) | configuration parameters for [**pool_resource**](#pool_resource) with valid defaults |
 
 ---
 
