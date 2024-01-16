@@ -33,7 +33,11 @@ public:
 
   stack(stack&& rhs): head_{ .ptr = rhs.reset(), .aba_counter = 0 } {}
 
-  inline void push(T*) noexcept;
+  inline void push(T* first, T* last) noexcept;
+  inline void push(T* const ptr) noexcept {
+    push(ptr, ptr);
+  }
+
   inline T* pop() noexcept;
 
   /**
@@ -55,7 +59,7 @@ private:
 };
 
 template <stackable T, thread_safety_t _ts>
-void stack<T, _ts>::push(T* const ptr) noexcept {
+void stack<T, _ts>::push(T* const first, T* const last) noexcept {
   // Since we don't really access the head pointer, relaxed reads are
   // perfectly fine here (and in case of CAS failure)
   head_t old_head{
@@ -64,9 +68,9 @@ void stack<T, _ts>::push(T* const ptr) noexcept {
   };
 
   head_t new_head;
-  new_head.ptr = ptr;
+  new_head.ptr = first;
 
-  const auto next_ref = make_mem_ref<_ts>(ptr->next);
+  const auto next_ref = make_mem_ref<_ts>(last->next);
   const auto head_ref = make_mem_ref<_ts>(head_);
   do {
     next_ref.store(old_head.ptr, mo_t::relaxed);

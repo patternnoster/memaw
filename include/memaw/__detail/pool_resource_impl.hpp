@@ -216,22 +216,40 @@ void pool_resource_impl<R, _cfg>::deallocate(const uintptr_t ptr,
   for (size_t i = curr_id; i > 0;) {
     const auto& chunk_size = chunk_sizes[--i];
 
+    // We will pre-build a list of chunks and only then launch an
+    // expensive concurrent stack push instruction
+    chunk_t* head = nullptr;
+    chunk_t* last;
+
     // Upper part: go from the bottom
     while (upper_size >= chunk_size) {
       upper_size-= chunk_size;
       const auto new_chunk =
         new (reinterpret_cast<void*>(upper_ptr + upper_size)) chunk_t;
-      chunk_stacks_[i].push(new_chunk);
+
+      if (head) {
+        new_chunk->next = head;
+        head = new_chunk;
+      }
+      else head = last = new_chunk;
     }
 
     // Lower part: go from the top
     while (lower_size >= chunk_size) {
       const auto new_chunk = new (reinterpret_cast<void*>(lower_ptr)) chunk_t;
-      chunk_stacks_[i].push(new_chunk);
+
+      if (head) {
+        last->next = new_chunk;
+        last = new_chunk;
+      }
+      else head = last = new_chunk;
 
       lower_ptr+= chunk_size;
       lower_size-= chunk_size;
     }
+
+    // Finally push if found
+    if (head) chunk_stacks_[i].push(head, last);
   }
 }
 
