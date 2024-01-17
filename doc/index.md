@@ -920,6 +920,77 @@ Memory resource that maintains lists of chunks of fixed sizes allocated from the
 |---|---|
 | [**pool_resource_config**](#pool_resource_config) | configuration parameters for [**pool_resource**](#pool_resource) with valid defaults |
 
+### pool_resource::allocate
+<sub>Defined in header [&lt;memaw/pool_resource.hpp&gt;](/include/memaw/pool_resource.hpp)</sub>
+```c++
+[[nodiscard]] void* allocate
+  (size_t size, size_t alignment = alignof(std::max_align_t)) noexcept;
+```
+Allocates memory from the pool, calling the upstream [**allocate()**](#allocate) if there is not enough left.
+
+**Parameters**
+* `size` must be a multiple of [**config.min_chunk_size**](#pool_resource_configmin_chunk_size)
+* `alignment` must be a power of 2
+
+---
+
+### pool_resource::deallocate
+<sub>Defined in header [&lt;memaw/pool_resource.hpp&gt;](/include/memaw/pool_resource.hpp)</sub>
+```c++
+void deallocate(void* ptr, size_t size,
+                size_t = alignof(std::max_align_t)) noexcept;
+```
+Deallocates previously allocated chunks and marks them for reuse. The **deallocate()** call on the upstream resource happens only on destruction.
+
+---
+
+### pool_resource::guaranteed_alignment
+<sub>Defined in header [&lt;memaw/pool_resource.hpp&gt;](/include/memaw/pool_resource.hpp)</sub>
+```c++
+constexpr static pow2_t guaranteed_alignment() noexcept
+  requires(_config.min_chunk_size > alignof(std::max_align_t));
+```
+Returns the minimal alignment of any address allocated by the pool if its configuration allows that.
+
+---
+
+### pool_resource::min_size
+<sub>Defined in header [&lt;memaw/pool_resource.hpp&gt;](/include/memaw/pool_resource.hpp)</sub>
+```c++
+constexpr static pow2_t min_size() noexcept;
+```
+Returns the (configured) size of a minimum allocation: any allocation can only request a size that is a multiple of this value.
+
+---
+
+### pool_resource::pool_resource
+<sub>Defined in header [&lt;memaw/pool_resource.hpp&gt;](/include/memaw/pool_resource.hpp)</sub>
+```c++
+constexpr pool_resource()
+  noexcept(std::is_nothrow_default_constructible_v<upstream_t>)
+  requires(std::default_initializable<upstream_t>);
+```
+
+---
+
+<sub>Defined in header [&lt;memaw/pool_resource.hpp&gt;](/include/memaw/pool_resource.hpp)</sub>
+```c++
+constexpr pool_resource(upstream_t&& upstream)
+  noexcept(std::is_nothrow_move_constructible_v<upstream_t>);
+```
+
+---
+
+<sub>Defined in header [&lt;memaw/pool_resource.hpp&gt;](/include/memaw/pool_resource.hpp)</sub>
+```c++
+constexpr pool_resource(pool_resource&& rhs)
+  noexcept(std::is_nothrow_move_constructible_v<upstream_t>);
+```
+Move constructs the pool leaving rhs in an empty but valid state (as long as the same is true for the upstream resource).
+
+> [!NOTE]
+> The operation is not thread safe even if the resources are configured as such. All memory allocated by the rhs resource and not deallocated before the move must be deallocated through the new instance.
+
 ---
 
 ### resource_traits
