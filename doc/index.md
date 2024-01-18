@@ -993,6 +993,62 @@ Move constructs the pool leaving rhs in an empty but valid state (as long as the
 
 ---
 
+### pool_resource_config
+<sub>Defined in header [&lt;memaw/pool_resource.hpp&gt;](/include/memaw/pool_resource.hpp)</sub>
+```c++
+struct pool_resource_config;
+```
+Configuration parameters for [**pool_resource**](#pool_resource) with valid defaults.
+
+| Name | Default | Description |
+|---|:---:|---|
+| [**min_chunk_size**](#pool_resource_configmin_chunk_size) | 1KiB | the minimum size of a chunk, the size of every allocation must be a multiple of this value (since every allocation must request full chunks) |
+| [**max_chunk_size**](#pool_resource_configmax_chunk_size) | 16KiB | the maximum size of a chunk |
+| [**chunk_size_multiplier**](#pool_resource_configchunk_size_multiplier) | 2 | the multiplier of chunk sizes, determines the number of chunk lists maintained and the size of allocation from the upstream |
+| [**thread_safe**](#pool_resource_configthread_safe) | true | thread safety policy |
+
+### pool_resource_config::min_chunk_size
+<sub>Defined in header [&lt;memaw/pool_resource.hpp&gt;](/include/memaw/pool_resource.hpp)</sub>
+```c++
+const pow2_t min_chunk_size = pow2_t{1_KiB};
+```
+The minimum size of a chunk. The size of every allocation must be a multiple of this value (since every allocation must request full chunks).
+
+> [!NOTE]
+> This value also determines the guaranteed alignment and the alignment parameter passed to the upstream **allocate()** call.
+
+---
+
+### pool_resource_config::max_chunk_size
+<sub>Defined in header [&lt;memaw/pool_resource.hpp&gt;](/include/memaw/pool_resource.hpp)</sub>
+```c++
+const size_t max_chunk_size = 16_KiB;
+```
+The maximum size of a chunk. Must equal `min_chunk_size * chunk_size_multiplier^n` for some `n`.
+
+---
+
+### pool_resource_config::chunk_size_multiplier
+<sub>Defined in header [&lt;memaw/pool_resource.hpp&gt;](/include/memaw/pool_resource.hpp)</sub>
+```c++
+const size_t chunk_size_multiplier = 2;
+```
+The multiplier of chunk sizes. Determines the number of chunk lists maintained and the size of allocation from the upstream (which is `max_chunk_size * chunk_size_multiplier` normally).
+
+---
+
+### pool_resource_config::thread_safe
+<sub>Defined in header [&lt;memaw/pool_resource.hpp&gt;](/include/memaw/pool_resource.hpp)</sub>
+```c++
+const bool thread_safe = true;
+```
+Thread safety policy: if set to true, the implementation will use atomic instructions to manage its internal structures (requires DWCAS). The thread safe implementation is lock-free.
+
+> [!NOTE]
+> If the underlying resource is not thread safe, setting this parameter to true will change the type of instructions used but won't make the pool thread safe either.
+
+---
+
 ### resource_traits
 <sub>Defined in header [&lt;memaw/resource_traits.hpp&gt;](/include/memaw/resource_traits.hpp)</sub>
 ```c++
